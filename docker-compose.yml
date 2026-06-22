@@ -1,0 +1,87 @@
+# Local development infrastructure for Clever Sloth.
+#
+# This file runs only the BACKING SERVICES (database, cache, object storage,
+# mail catcher). During development you run the API (`go run`) and web
+# (`pnpm dev`) on your host machine, pointed at these containers. In Phase 4 we
+# containerize the api/web themselves and deploy everything to Kubernetes — but
+# for day-to-day coding, host + compose is the fastest loop.
+#
+# Usage:
+#   docker compose up -d        # start everything in the background
+#   docker compose ps           # see status + health
+#   docker compose logs -f       # tail logs
+#   docker compose down          # stop (add -v to also wipe data volumes)
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: cs-postgres
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: cleversloth
+    ports:
+      # Host port 5433 (not 5432) to avoid colliding with a native PostgreSQL
+      # install that may already own 5432. Inside the container it's still 5432.
+      - "5433:5432"
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    # healthcheck mirrors a Kubernetes readiness probe: compose won't report the
+    # service "healthy" until Postgres actually accepts connections.
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d cleversloth"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  redis:
+    image: redis:7-alpine
+    container_name: cs-redis
+    # Used for sessions and the WebSocket pub/sub fan-out (real-time board updates).
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis-data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  minio:
+    image: minio/minio:latest
+    container_name: cs-minio
+    # Self-hosted S3-compatible object storage for issue attachments.
+    # Console UI: http://localhost:9001  (login: minioadmin / minioadmin)
+    # S3 API:     http://localhost:9000
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: minioadmin
+      MINIO_ROOT_PASSWORD: minioadmin
+      # Allow the browser (localhost:3000) to PUT files straight to MinIO via
+      # presigned URLs without being blocked by CORS.
+      MINIO_API_CORS_ALLOW_ORIGIN: "*"
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    volumes:
+      - minio-data:/data
+    healthcheck:
+      test: ["CMD", "mc", "ready", "local"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  mailhog:
+    image: mailhog/mailhog:latest
+    container_name: cs-mailhog
+    # Catches all outgoing email locally so you never need a real SMTP server.
+    # SMTP server: localhost:1025  |  Web inbox: http://localhost:8025
+    ports:
+      - "1025:1025"
+      - "8025:8025"
+
+volumes:
+  postgres-data:
+  redis-data:
+  minio-data:

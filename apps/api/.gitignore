@@ -1,0 +1,11 @@
+# Compiled binaries
+*.exe
+cs-api
+/server
+
+# Local env & logs
+.env
+*.log
+
+# Go test/coverage
+*.out
