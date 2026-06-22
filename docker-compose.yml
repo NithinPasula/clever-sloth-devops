@@ -17,8 +17,8 @@ services:
     image: postgres:16-alpine
     container_name: cs-postgres
     environment:
-      POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: postgres
+      POSTGRES_USER: <<REPLACE_WITH_USERNAME>>
+      POSTGRES_PASSWORD: <<REPLACE_WITH_PASSWORD>>
       POSTGRES_DB: cleversloth
     ports:
       # Host port 5433 (not 5432) to avoid colliding with a native PostgreSQL
@@ -56,8 +56,8 @@ services:
     # S3 API:     http://localhost:9000
     command: server /data --console-address ":9001"
     environment:
-      MINIO_ROOT_USER: minioadmin
-      MINIO_ROOT_PASSWORD: minioadmin
+      MINIO_ROOT_USER: <<REPLACE_WITH_USERNAME>>
+      MINIO_ROOT_PASSWORD: <<REPLACE_WITH_PASSWORD>>
       # Allow the browser (localhost:3000) to PUT files straight to MinIO via
       # presigned URLs without being blocked by CORS.
       MINIO_API_CORS_ALLOW_ORIGIN: "*"
