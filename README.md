@@ -118,7 +118,6 @@ The application is the foundation; the next phases turn it into a production-gra
 - **Phase 5 — Observability:** Prometheus + Grafana dashboards, Loki + Promtail log aggregation, Alertmanager
 - **Phase 6 — Advanced platform:** ArgoCD (GitOps), Linkerd service mesh (mTLS, canary, tracing), HPA, NetworkPolicies, and a **custom Kubernetes Operator** (`CleverSlothProject` CRD)
 
-See [`PROGRESS.md`](./PROGRESS.md) for the detailed, up-to-date build log and next steps.
 
 ---
 
