@@ -1,0 +1,10 @@
+# TEMPLATE for secret overrides — safe to commit.
+# Copy to values.local.yaml (gitignored), fill in real values, then:
+#   helm install clever-sloth . -n clever-sloth-dev -f values.local.yaml
+postgres:
+  password: CHANGE_ME
+minio:
+  rootUser: CHANGE_ME
+  rootPassword: CHANGE_ME
+api:
+  jwtSecret: CHANGE_ME

@@ -1,0 +1,7 @@
+# Files Helm should NOT package into the chart tarball.
+.DS_Store
+.git/
+*.tmp
+*.bak
+# never package real secret values, even if one lands here
+values.local.yaml

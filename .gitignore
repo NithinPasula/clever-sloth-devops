@@ -50,6 +50,9 @@ k8s/dev/secrets/*
 !k8s/dev/secrets/*.example.yaml
 !k8s/dev/secrets/README.md
 
+# Helm real-secret overrides — only values.local.example.yaml is tracked
+values.local.yaml
+
 # Personal notes — local only, not for the repo
 PROGRESS.md
 docs/learning/

@@ -1,0 +1,10 @@
+# Chart.yaml — metadata that identifies this chart to Helm.
+apiVersion: v2                 # v2 = Helm 3 chart format
+name: clever-sloth
+description: Clever Sloth — self-hosted project tracker (web + api + datastores)
+type: application
+
+# version    = the version of THIS CHART (bump when you change templates).
+# appVersion = the version of the APP it deploys (informational; shown in `helm list`).
+version: 0.1.0
+appVersion: "0.1.0"

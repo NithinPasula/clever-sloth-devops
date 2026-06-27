@@ -1,0 +1,107 @@
+# values.yaml — the single place where every tunable knob lives.
+# Templates read these via {{ .Values.<path> }}.
+#
+# SECRETS: the password / secret / key fields below are PLACEHOLDERS (CHANGE_ME).
+# Real credentials go in values.local.yaml (gitignored) and are merged at
+# install time with:  helm install ... -f values.local.yaml
+# That keeps real secrets out of git while this file stays safe to commit.
+
+# ----------------------------------------------------------------------------
+# Postgres — primary database (StatefulSet + headless Service + Secret).
+# ----------------------------------------------------------------------------
+postgres:
+  image: postgres:16-alpine
+  storage: 1Gi              # size of the PersistentVolumeClaim
+  resources:
+    requests:
+      cpu: 100m
+      memory: 128Mi
+    limits:
+      memory: 256Mi
+  database: cleversloth     # non-secret: the DB name
+  # --- secret (override in values.local.yaml) ---
+  user: postgres
+  password: CHANGE_ME
+
+# ----------------------------------------------------------------------------
+# Redis — cache / pub-sub (stateless Deployment + Service, no volume).
+# ----------------------------------------------------------------------------
+redis:
+  image: redis:7-alpine
+  resources:
+    requests:
+      cpu: 25m
+      memory: 32Mi
+    limits:
+      memory: 128Mi
+
+# ----------------------------------------------------------------------------
+# MinIO — S3-compatible object storage for attachments (PVC + Deployment + Service + Secret).
+# ----------------------------------------------------------------------------
+minio:
+  image: minio/minio:latest
+  storage: 2Gi
+  resources:
+    requests:
+      cpu: 50m
+      memory: 128Mi
+    limits:
+      memory: 512Mi
+  # --- secret (override in values.local.yaml) ---
+  rootUser: minioadmin
+  rootPassword: CHANGE_ME
+
+# ----------------------------------------------------------------------------
+# API — Go backend (ConfigMap + Secret + Deployment + Service).
+# ----------------------------------------------------------------------------
+api:
+  image: clever-sloth-api:dev
+  imagePullPolicy: IfNotPresent   # use the locally-imported image, don't pull
+  replicas: 1
+  resources:
+    requests:
+      cpu: 50m
+      memory: 64Mi
+    limits:
+      memory: 256Mi
+  # ingress-nginx-controller ClusterIP, pinned via hostAliases so the API reaches
+  # MinIO over the same public host:port it signs presigned URLs with.
+  # Re-check after reinstalling ingress-nginx:
+  #   kubectl get svc -n ingress-nginx ingress-nginx-controller -o jsonpath='{.spec.clusterIP}'
+  minioIngressIP: "10.43.205.79"
+  config:
+    appEnv: development
+    logLevel: info
+    minioBucket: attachments
+    minioUseSSL: "false"
+  # --- secret (override in values.local.yaml) ---
+  jwtSecret: CHANGE_ME
+
+# ----------------------------------------------------------------------------
+# Web — Next.js standalone front-end (Deployment + Service).
+# ----------------------------------------------------------------------------
+web:
+  image: clever-sloth-web:dev
+  imagePullPolicy: IfNotPresent
+  replicas: 1
+  resources:
+    requests:
+      cpu: 50m
+      memory: 64Mi
+    limits:
+      memory: 256Mi
+
+# ----------------------------------------------------------------------------
+# Ingress — routing + TLS. The clusterIssuer is bootstrapped once (k8s/dev/tls.yaml),
+# this chart only references it by name.
+# ----------------------------------------------------------------------------
+ingress:
+  className: nginx
+  clusterIssuer: clever-sloth-ca
+  appHost: clever-sloth.local
+  minioHost: minio.clever-sloth.local
+  tlsSecretName: clever-sloth-tls
+  # The web image bakes an http:// API URL, so forcing https->only would cause
+  # mixed-content blocks. Keep http usable until we do full end-to-end HTTPS
+  # (rebuild web for https + MinIO TLS + CA trust in the API pod).
+  sslRedirect: false
