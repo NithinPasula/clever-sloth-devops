@@ -1,0 +1,9 @@
+# Keep the build context small & clean — these never belong in the image.
+cs-api
+cs-api.exe
+*.exe
+*.log
+.env
+.env.*
+Dockerfile
+.dockerignore

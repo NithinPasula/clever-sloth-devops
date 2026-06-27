@@ -1,0 +1,112 @@
+# Clever Sloth API for the dev namespace.
+# Objects: ConfigMap (plain config) + Deployment + Service.
+# The Secret it depends on (api-secret) lives in k8s/dev/secrets/ and is
+# gitignored — apply that first:
+#   kubectl apply -f k8s/dev/secrets/  &&  kubectl apply -f k8s/dev/api.yaml
+
+# ---------------------------------------------------------------------------
+# 1) ConfigMap — NON-secret runtime config. Note how the dependency URLs use the
+#    in-cluster Service DNS names: `redis`, `minio`. Same namespace => short name.
+# ---------------------------------------------------------------------------
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: api-config
+  namespace: clever-sloth-dev
+data:
+  APP_ENV: "development"
+  PORT: "8080"
+  LOG_LEVEL: "info"
+  REDIS_URL: "redis://redis:6379/0"
+  # MinIO endpoint is the PUBLIC ingress host (port 80), NOT the internal
+  # minio:9000. minio-go signs presigned URLs with this host, so the host the
+  # browser uses matches the signature. The API still reaches it because of the
+  # hostAliases entry on the pod below.
+  MINIO_ENDPOINT: "minio.clever-sloth.local"
+  MINIO_BUCKET: "attachments"
+  MINIO_USE_SSL: "false"
+---
+# ---------------------------------------------------------------------------
+# 2) Deployment — runs the API. Stateless, so a plain Deployment is perfect
+#    (and later we can scale replicas / add an HPA freely).
+# ---------------------------------------------------------------------------
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: api
+  namespace: clever-sloth-dev
+  labels:
+    app: api
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: api
+  template:
+    metadata:
+      labels:
+        app: api
+    spec:
+      # Make the public MinIO host resolve INSIDE the cluster -> the Ingress
+      # controller's ClusterIP. So the API reaches MinIO over the same host:port
+      # (port 80) that it signs presigned URLs with, and the browser uses too.
+      # NOTE: this IP is the ingress-nginx-controller ClusterIP. If you reinstall
+      # ingress-nginx, re-check it with:
+      #   kubectl get svc -n ingress-nginx ingress-nginx-controller -o jsonpath='{.spec.clusterIP}'
+      hostAliases:
+        - ip: "10.43.205.79"
+          hostnames:
+            - "minio.clever-sloth.local"
+      containers:
+        - name: api
+          image: clever-sloth-api:dev
+          imagePullPolicy: IfNotPresent   # use the locally-imported image, don't pull
+          ports:
+            - containerPort: 8080
+          # Pull ALL keys from both the ConfigMap and the Secret as env vars.
+          envFrom:
+            - configMapRef:
+                name: api-config
+            - secretRef:
+                name: api-secret
+          # readiness = "ready to serve?" -> /readyz checks the DB connection,
+          # so the pod only joins the Service once Postgres is actually reachable.
+          readinessProbe:
+            httpGet:
+              path: /readyz
+              port: 8080
+            initialDelaySeconds: 5
+            periodSeconds: 5
+            failureThreshold: 6           # tolerate slow DB warm-up before giving up
+          # liveness = "still alive?" -> /healthz is a cheap, dependency-free check.
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: 8080
+            initialDelaySeconds: 10
+            periodSeconds: 15
+          resources:
+            requests:
+              cpu: 50m
+              memory: 64Mi
+            limits:
+              memory: 256Mi
+---
+# ---------------------------------------------------------------------------
+# 3) Service — stable in-cluster address for the API. The web app (and our
+#    port-forward) reach it here.
+# ---------------------------------------------------------------------------
+apiVersion: v1
+kind: Service
+metadata:
+  name: api
+  namespace: clever-sloth-dev
+  labels:
+    app: api
+spec:
+  selector:
+    app: api
+  ports:
+    - name: http
+      port: 8080
+      targetPort: 8080

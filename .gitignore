@@ -44,3 +44,15 @@ apps/api/cs-api.exe
 
 # Logs
 *.log
+
+# Kubernetes secrets — never commit real credentials (only *.example.yaml is tracked)
+k8s/dev/secrets/*
+!k8s/dev/secrets/*.example.yaml
+!k8s/dev/secrets/README.md
+
+# Personal notes — local only, not for the repo
+PROGRESS.md
+docs/learning/
+
+# Exported local CA certificate (machine-specific)
+*.crt

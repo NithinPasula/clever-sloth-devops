@@ -1,0 +1,72 @@
+# Ingress — the single front door to the app.
+# Routes by hostname + path to the right in-cluster Service.
+# Apply with:  kubectl apply -f k8s/dev/ingress.yaml
+
+# ---------------------------------------------------------------------------
+# Main app: clever-sloth.local
+#   /api  -> api Service  (the Go backend serves under /api/v1, no rewrite needed)
+#   /     -> web Service  (the Next.js frontend; catch-all)
+# nginx matches the LONGEST path first, so /api wins for /api/*, and / gets the rest.
+# WebSocket upgrades on /api/v1/.../board/ws work automatically with nginx ingress.
+# ---------------------------------------------------------------------------
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: clever-sloth
+  namespace: clever-sloth-dev
+  annotations:
+    # cert-manager watches this annotation and auto-creates a Certificate for the
+    # hosts in `tls:` below, signed by our CA ClusterIssuer. Stored in the named
+    # secret, which nginx then uses to terminate TLS.
+    cert-manager.io/cluster-issuer: clever-sloth-ca
+spec:
+  ingressClassName: nginx
+  tls:
+    - hosts:
+        - clever-sloth.local
+      secretName: clever-sloth-tls
+  rules:
+    - host: clever-sloth.local
+      http:
+        paths:
+          - path: /api
+            pathType: Prefix
+            backend:
+              service:
+                name: api
+                port:
+                  number: 8080
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: web
+                port:
+                  number: 3000
+---
+# ---------------------------------------------------------------------------
+# MinIO: minio.clever-sloth.local -> minio Service (S3 API on 9000)
+#   This gives presigned URLs a host BOTH the browser and the API can use
+#   (on default port 80), so the AWS-v4 signature matches and uploads work.
+#   proxy-body-size: "0" removes nginx's default 1 MB upload cap.
+# ---------------------------------------------------------------------------
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: minio
+  namespace: clever-sloth-dev
+  annotations:
+    nginx.ingress.kubernetes.io/proxy-body-size: "0"
+spec:
+  ingressClassName: nginx
+  rules:
+    - host: minio.clever-sloth.local
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: minio
+                port:
+                  number: 9000

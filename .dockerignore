@@ -1,0 +1,16 @@
+# Root build context ignore (used by the web image, context = repo root).
+# Keep host-only and bulky artifacts out of the Docker build context.
+**/node_modules
+**/.next
+**/.turbo
+**/dist
+**/build
+**/out
+**/*.log
+**/.env
+**/.env.*
+.git
+.gitignore
+**/cs-api
+**/cs-api.exe
+**/*.exe

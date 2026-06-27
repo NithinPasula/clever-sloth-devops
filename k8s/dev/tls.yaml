@@ -1,0 +1,51 @@
+# Private PKI for local TLS, built with cert-manager.
+# Chain:  SelfSigned ClusterIssuer -> root CA Certificate -> CA ClusterIssuer
+# The CA ClusterIssuer then signs leaf certs for our Ingress hosts.
+# Apply with:  kubectl apply -f k8s/dev/tls.yaml
+
+# ---------------------------------------------------------------------------
+# 1) A bootstrap issuer that signs certs with their OWN key (self-signed).
+#    We only use it to mint the root CA below. ClusterIssuer = cluster-wide.
+# ---------------------------------------------------------------------------
+apiVersion: cert-manager.io/v1
+kind: ClusterIssuer
+metadata:
+  name: selfsigned
+spec:
+  selfSigned: {}
+---
+# ---------------------------------------------------------------------------
+# 2) The root CA certificate (isCA: true), signed by the self-signed issuer.
+#    Its key pair lands in secret `clever-sloth-ca-key-pair` in the cert-manager
+#    namespace (a CA ClusterIssuer reads its CA secret from there).
+#    THIS is the cert you trust once in Windows -> everything it signs goes green.
+# ---------------------------------------------------------------------------
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: clever-sloth-ca
+  namespace: cert-manager
+spec:
+  isCA: true
+  commonName: clever-sloth-local-ca
+  secretName: clever-sloth-ca-key-pair
+  duration: 87600h            # 10 years — it's a local dev root
+  privateKey:
+    algorithm: ECDSA
+    size: 256
+  issuerRef:
+    name: selfsigned
+    kind: ClusterIssuer
+    group: cert-manager.io
+---
+# ---------------------------------------------------------------------------
+# 3) The CA issuer. Leaf certificates reference THIS, and it signs them with the
+#    root CA key pair above — so they all chain back to one trusted root.
+# ---------------------------------------------------------------------------
+apiVersion: cert-manager.io/v1
+kind: ClusterIssuer
+metadata:
+  name: clever-sloth-ca
+spec:
+  ca:
+    secretName: clever-sloth-ca-key-pair

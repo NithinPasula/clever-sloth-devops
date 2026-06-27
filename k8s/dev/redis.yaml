@@ -1,0 +1,56 @@
+# Redis for the dev namespace — used as cache / pub-sub.
+# Stateless on purpose: it's a cache, so we DON'T give it a volume. If the pod
+# restarts, the cache is simply rebuilt. That's why a plain Deployment is fine
+# here (no StatefulSet, no PVC).
+# Apply with:  kubectl apply -f k8s/dev/redis.yaml
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: redis
+  namespace: clever-sloth-dev
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: redis
+  template:
+    metadata:
+      labels:
+        app: redis
+    spec:
+      containers:
+        - name: redis
+          image: redis:7-alpine
+          ports:
+            - containerPort: 6379
+          readinessProbe:
+            exec:
+              command: ["redis-cli", "ping"]   # returns PONG when ready
+            initialDelaySeconds: 3
+            periodSeconds: 5
+          livenessProbe:
+            tcpSocket:
+              port: 6379                        # simplest liveness: is the port open?
+            initialDelaySeconds: 10
+            periodSeconds: 10
+          resources:
+            requests:
+              cpu: 25m
+              memory: 32Mi
+            limits:
+              memory: 128Mi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: redis
+  namespace: clever-sloth-dev
+  labels:
+    app: redis
+spec:
+  selector:
+    app: redis
+  ports:
+    - name: redis
+      port: 6379
+      targetPort: 6379

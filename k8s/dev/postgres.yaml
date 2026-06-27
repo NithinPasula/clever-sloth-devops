@@ -1,0 +1,100 @@
+# Postgres for the dev namespace.
+# Two objects in one file (separated by ---): Service, StatefulSet.
+# The Secret it depends on (postgres-secret) lives in k8s/dev/secrets/ and is
+# gitignored — apply that first:
+#   kubectl apply -f k8s/dev/secrets/  &&  kubectl apply -f k8s/dev/postgres.yaml
+
+# ---------------------------------------------------------------------------
+# 1) Service — a stable network identity. Pods are ephemeral (IPs change), so
+#    other pods talk to "postgres" (DNS name) instead of a pod IP.
+#    clusterIP: None makes it "headless" — the conventional pairing for a
+#    StatefulSet. Within this namespace, the host name `postgres` resolves here.
+# ---------------------------------------------------------------------------
+apiVersion: v1
+kind: Service
+metadata:
+  name: postgres
+  namespace: clever-sloth-dev
+  labels:
+    app: postgres
+spec:
+  clusterIP: None
+  selector:
+    app: postgres          # routes to pods carrying this label
+  ports:
+    - name: postgres
+      port: 5432
+      targetPort: 5432
+---
+# ---------------------------------------------------------------------------
+# 2) StatefulSet — the controller that runs Postgres.
+#    Why StatefulSet (not Deployment) for a database:
+#      - gives the pod a STABLE name (postgres-0) instead of a random suffix
+#      - manages its own PersistentVolumeClaim via volumeClaimTemplates, so the
+#        pod keeps the SAME disk across restarts/reschedules.
+# ---------------------------------------------------------------------------
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: postgres
+  namespace: clever-sloth-dev
+spec:
+  serviceName: postgres      # ties the StatefulSet to the headless Service above
+  replicas: 1
+  selector:
+    matchLabels:
+      app: postgres
+  template:
+    metadata:
+      labels:
+        app: postgres        # must match the selector above AND the Service selector
+    spec:
+      containers:
+        - name: postgres
+          image: postgres:16-alpine
+          ports:
+            - containerPort: 5432
+          # Pull every value from the Secret into the container's environment.
+          envFrom:
+            - secretRef:
+                name: postgres-secret
+          env:
+            # Point Postgres at a SUBDIRECTORY of the mounted volume. If PGDATA is
+            # the mount root, Postgres errors on the volume's lost+found dir.
+            - name: PGDATA
+              value: /var/lib/postgresql/data/pgdata
+          volumeMounts:
+            - name: data
+              mountPath: /var/lib/postgresql/data
+          # Probes: Kubernetes uses these to know if the container is healthy.
+          #   readiness -> "can it serve traffic yet?" (gates the Service)
+          #   liveness  -> "is it still alive, or should I restart it?"
+          readinessProbe:
+            exec:
+              command: ["pg_isready", "-U", "postgres", "-d", "cleversloth"]
+            initialDelaySeconds: 5
+            periodSeconds: 5
+          livenessProbe:
+            exec:
+              command: ["pg_isready", "-U", "postgres", "-d", "cleversloth"]
+            initialDelaySeconds: 15
+            periodSeconds: 10
+          # Resource budget — important since the whole cluster shares ~3.8 GB.
+          # requests = guaranteed/scheduled; limits = hard ceiling.
+          resources:
+            requests:
+              cpu: 100m
+              memory: 128Mi
+            limits:
+              memory: 256Mi
+  # volumeClaimTemplates: the StatefulSet creates a PVC named data-postgres-0
+  # from this template. k3s's built-in local-path provisioner fulfills it from
+  # the node's disk. This is what makes the data PERSISTENT.
+  volumeClaimTemplates:
+    - metadata:
+        name: data
+      spec:
+        accessModes: ["ReadWriteOnce"]
+        resources:
+          requests:
+            storage: 1Gi

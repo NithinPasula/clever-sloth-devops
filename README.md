@@ -20,6 +20,7 @@ The application is intentionally engineered as the **workload for a real DevOps 
 ## ✨ Features
 
 ### Project & issue management
+
 - **Workspaces & projects** with role-based access (owner / admin / member / viewer)
 - **Issues** with types (Epic, Story, Task, Sub-task, Bug), priorities, and auto-generated keys (`CS-1`, `CS-2`, …)
 - **Kanban board** with drag-and-drop across columns and **real-time updates over WebSockets**
@@ -29,6 +30,7 @@ The application is intentionally engineered as the **workload for a real DevOps 
 - **Rich issue detail** — editable title/description, comments, full **activity/audit log**, and **file attachments**
 
 ### Engineering & security
+
 - JWT auth (access + refresh tokens), bcrypt password hashing, httpOnly refresh cookies
 - No user enumeration on login; JWT algorithm-confusion protection
 - Presigned S3 (MinIO) uploads — files never pass through the API
@@ -39,17 +41,17 @@ The application is intentionally engineered as the **workload for a real DevOps 
 
 ## 🧱 Tech stack
 
-| Layer | Technology |
-|------|------------|
-| Frontend | Next.js 16, React 19, TypeScript, Tailwind CSS v4, dnd-kit, Zustand |
-| Backend | Go, Fiber, GORM |
-| Database | PostgreSQL 16 |
-| Cache / realtime | Redis |
-| Object storage | MinIO (S3-compatible) |
-| Email (dev) | MailHog |
-| Monorepo | Turborepo + pnpm |
-| Local infra | Docker Compose |
-| Target platform | Kubernetes (k3s) |
+| Layer            | Technology                                                          |
+| ---------------- | ------------------------------------------------------------------- |
+| Frontend         | Next.js 16, React 19, TypeScript, Tailwind CSS v4, dnd-kit, Zustand |
+| Backend          | Go, Fiber, GORM                                                     |
+| Database         | PostgreSQL 16                                                       |
+| Cache / realtime | Redis                                                               |
+| Object storage   | MinIO (S3-compatible)                                               |
+| Email (dev)      | MailHog                                                             |
+| Monorepo         | Turborepo + pnpm                                                    |
+| Local infra      | Docker Compose                                                      |
+| Target platform  | Kubernetes (k3s)                                                    |
 
 ---
 
@@ -117,8 +119,6 @@ The application is the foundation; the next phases turn it into a production-gra
 - **Phase 4 — Kubernetes:** multi-stage Docker images, k3s cluster, Helm chart, Ingress + cert-manager (TLS), Sealed Secrets
 - **Phase 5 — Observability:** Prometheus + Grafana dashboards, Loki + Promtail log aggregation, Alertmanager
 - **Phase 6 — Advanced platform:** ArgoCD (GitOps), Linkerd service mesh (mTLS, canary, tracing), HPA, NetworkPolicies, and a **custom Kubernetes Operator** (`CleverSlothProject` CRD)
-
-See [`PROGRESS.md`](./PROGRESS.md) for the detailed, up-to-date build log and next steps.
 
 ---
 

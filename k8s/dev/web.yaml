@@ -1,0 +1,61 @@
+# Clever Sloth web (Next.js standalone) for the dev namespace.
+# Stateless front-end -> plain Deployment + Service.
+# Apply with:  kubectl apply -f k8s/dev/web.yaml
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: web
+  namespace: clever-sloth-dev
+  labels:
+    app: web
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: web
+  template:
+    metadata:
+      labels:
+        app: web
+    spec:
+      containers:
+        - name: web
+          image: clever-sloth-web:dev
+          imagePullPolicy: IfNotPresent   # use the locally-imported image
+          ports:
+            - containerPort: 3000
+          # The standalone Next server returns 200 on "/", so a simple httpGet
+          # works for both probes.
+          readinessProbe:
+            httpGet:
+              path: /
+              port: 3000
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /
+              port: 3000
+            initialDelaySeconds: 10
+            periodSeconds: 15
+          resources:
+            requests:
+              cpu: 50m
+              memory: 64Mi
+            limits:
+              memory: 256Mi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: web
+  namespace: clever-sloth-dev
+  labels:
+    app: web
+spec:
+  selector:
+    app: web
+  ports:
+    - name: http
+      port: 3000
+      targetPort: 3000
