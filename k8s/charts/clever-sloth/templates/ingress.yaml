@@ -47,8 +47,13 @@ metadata:
     {{- include "clever-sloth.labels" . | nindent 4 }}
   annotations:
     nginx.ingress.kubernetes.io/proxy-body-size: "0"   # remove 1 MB upload cap
+    cert-manager.io/cluster-issuer: {{ .Values.ingress.clusterIssuer }}
 spec:
   ingressClassName: {{ .Values.ingress.className }}
+  tls:
+    - hosts:
+        - {{ .Values.ingress.minioHost }}
+      secretName: {{ .Values.ingress.minioTlsSecretName }}
   rules:
     - host: {{ .Values.ingress.minioHost }}
       http:

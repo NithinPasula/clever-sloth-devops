@@ -77,15 +77,11 @@ api:
       memory: 64Mi
     limits:
       memory: 256Mi
-  # ingress-nginx-controller ClusterIP, pinned via hostAliases so the API reaches
-  # MinIO over the same public host:port it signs presigned URLs with.
-  # Re-check after reinstalling ingress-nginx:
-  #   kubectl get svc -n ingress-nginx ingress-nginx-controller -o jsonpath='{.spec.clusterIP}'
-  minioIngressIP: "10.43.205.79"
   config:
     appEnv: development
     logLevel: info
     minioBucket: attachments
+    # SSL for the API's INTERNAL connection to MinIO (minio:9000) — stays http.
     minioUseSSL: "false"
   # --- secret (override in values.local.yaml) ---
   jwtSecret: CHANGE_ME
@@ -112,9 +108,12 @@ ingress:
   className: nginx
   clusterIssuer: clever-sloth-ca
   appHost: clever-sloth.local
-  minioHost: minio.clever-sloth.local
   tlsSecretName: clever-sloth-tls
-  # The web image bakes an http:// API URL, so forcing https->only would cause
-  # mixed-content blocks. Keep http usable until we do full end-to-end HTTPS
-  # (rebuild web for https + MinIO TLS + CA trust in the API pod).
-  sslRedirect: false
+  # MinIO is exposed on its own host with its own TLS cert, so the browser fetches
+  # presigned URLs over HTTPS (no mixed content). minioPublicUseSSL drives the
+  # scheme the API signs those URLs with — must match the ingress (https => true).
+  minioHost: minio.clever-sloth.local
+  minioTlsSecretName: minio-tls
+  minioPublicUseSSL: "true"
+  # Web is now built with an https API URL, so we force http->https everywhere.
+  sslRedirect: true

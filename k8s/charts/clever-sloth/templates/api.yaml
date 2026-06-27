@@ -12,10 +12,14 @@ data:
   PORT: "8080"
   LOG_LEVEL: {{ .Values.api.config.logLevel | quote }}
   REDIS_URL: "redis://redis:6379/0"
-  # Public ingress host (port 80) so presigned-URL signatures match the browser.
-  MINIO_ENDPOINT: {{ .Values.ingress.minioHost | quote }}
-  MINIO_BUCKET: {{ .Values.api.config.minioBucket | quote }}
+  # The API talks to MinIO over the INTERNAL service (private, http) for bucket
+  # ops, but signs presigned URLs against the PUBLIC ingress host (https) so the
+  # browser's request matches the signature with no mixed content.
+  MINIO_ENDPOINT: "minio:9000"
   MINIO_USE_SSL: {{ .Values.api.config.minioUseSSL | quote }}
+  MINIO_PUBLIC_ENDPOINT: {{ .Values.ingress.minioHost | quote }}
+  MINIO_PUBLIC_USE_SSL: {{ .Values.ingress.minioPublicUseSSL | quote }}
+  MINIO_BUCKET: {{ .Values.api.config.minioBucket | quote }}
 ---
 {{- if .Values.secrets.create }}
 apiVersion: v1
@@ -54,12 +58,6 @@ spec:
       labels:
         app: api
     spec:
-      # Resolve the public MinIO host to the ingress controller ClusterIP inside
-      # the cluster, so the API and the browser use the same host:port (port 80).
-      hostAliases:
-        - ip: {{ .Values.api.minioIngressIP | quote }}
-          hostnames:
-            - {{ .Values.ingress.minioHost | quote }}
       containers:
         - name: api
           image: {{ .Values.api.image }}

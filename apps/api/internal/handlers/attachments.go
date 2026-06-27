@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"log/slog"
 	"strings"
 	"time"
 
@@ -86,6 +87,7 @@ func (h *Handler) DownloadAttachment(c *fiber.Ctx) error {
 	}
 	url, err := h.Storage.PresignedGetURL(c.Context(), att.ObjectKey, att.FileName, presignTTL)
 	if err != nil {
+		slog.Error("presigned get url failed", "error", err, "objectKey", att.ObjectKey, "fileName", att.FileName)
 		return fiber.NewError(fiber.StatusInternalServerError, "could not create download url")
 	}
 	return c.JSON(fiber.Map{"url": url, "expiresIn": int(presignTTL.Seconds())})

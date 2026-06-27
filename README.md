@@ -1,9 +1,9 @@
 # 🦥 Clever Sloth
 
-**A self-hosted, Jira-style project management platform**
+**A self-hosted, Jira-style project management platform — built to run the way production systems do.**
 
 > **Created and built by [Nithin Pasula](https://github.com/NithinPasula).**
-> This project is designed, owned, and maintained by Nithin Pasula as a hands-on platform for mastering production-grade Kubernetes and DevOps.
+> Designed, owned, and maintained by Nithin Pasula as a hands-on platform for mastering production-grade Kubernetes and DevOps.
 
 ---
 
@@ -13,7 +13,84 @@ Clever Sloth is a full-featured project tracker (a focused, open-source take on 
 
 The application is intentionally engineered as the **workload for a real DevOps journey**: it ships with health/readiness probes, Prometheus metrics, structured logging, graceful shutdown, and 12-factor configuration — so it can be deployed and operated on Kubernetes the way real production systems are.
 
-**Status:** ✅ Application (Phases 1–3) complete — currently moving into the Kubernetes / DevOps phases.
+**Status:** ✅ Application (Phases 1–3) complete · ✅ **Phase 4 — Kubernetes** complete (Helm-packaged, deployed to a local cluster with Ingress, cert-manager TLS, and Sealed Secrets) · 🔜 Phase 5 — Observability.
+
+---
+
+## 🏗️ Architecture
+
+Clever Sloth runs as a single Helm release on Kubernetes. A stateless Go API and a Next.js front-end sit behind an NGINX Ingress that terminates TLS; PostgreSQL, Redis, and MinIO provide persistence, cache/pub-sub, and object storage. Secrets are stored in git **encrypted** (Sealed Secrets) and decrypted only inside the cluster.
+
+```mermaid
+flowchart TB
+    user(["Browser"])
+
+    subgraph cluster["k3d / k3s Kubernetes cluster"]
+        direction TB
+
+        subgraph ingressns["ingress-nginx namespace"]
+            ingress["NGINX Ingress Controller<br/>(TLS termination)"]
+        end
+
+        subgraph certns["cert-manager namespace"]
+            cm["cert-manager"]
+            ca["Private CA<br/>(ClusterIssuer)"]
+        end
+
+        subgraph ks["kube-system"]
+            sealed["Sealed Secrets<br/>controller"]
+        end
+
+        subgraph appns["clever-sloth-dev namespace — Helm release"]
+            web["Web<br/>Next.js (standalone)"]
+            api["API<br/>Go + Fiber"]
+            pg[("PostgreSQL<br/>StatefulSet + PVC")]
+            redis[("Redis")]
+            minio[("MinIO<br/>Deployment + PVC")]
+            secret["Kubernetes Secrets"]
+            ssrc["SealedSecrets<br/>(encrypted, in git)"]
+        end
+    end
+
+    user -->|"HTTPS · clever-sloth.local"| ingress
+    ingress -->|"/"| web
+    ingress -->|"/api"| api
+    user <-->|"WSS · live board updates"| ingress
+    user -->|"HTTPS · minio.clever-sloth.local<br/>presigned upload / download"| ingress
+    ingress -->|"S3"| minio
+
+    api -->|"SQL"| pg
+    api -->|"cache · pub/sub"| redis
+    api -->|"internal HTTP · bucket ops"| minio
+
+    cm -. "issues leaf certs" .-> ingress
+    ca -. "signs" .- cm
+    ssrc -. "decrypted by" .-> sealed
+    sealed -. "creates" .-> secret
+    secret -. "env vars" .-> api
+    secret -. "env vars" .-> pg
+    secret -. "env vars" .-> minio
+```
+
+### Attachment flow (presigned URLs)
+
+Files never stream through the API — the browser uploads and downloads **directly** to MinIO using short-lived signed URLs. The API signs those URLs against the **public HTTPS** host (so the browser sees no mixed content), while it performs its own bucket operations over the **internal** network. Keeping bytes out of the API is what makes it cheap to scale horizontally.
+
+```mermaid
+sequenceDiagram
+    participant B as Browser
+    participant A as API (Go)
+    participant M as MinIO
+
+    B->>A: POST /issues/:id/attachments (file metadata)
+    Note right of A: Sign a presigned PUT URL (offline)<br/>host = https://minio.clever-sloth.local
+    A-->>B: { uploadUrl, attachmentId }
+    B->>M: PUT file bytes → https://minio.clever-sloth.local (via Ingress)
+    M-->>B: 200 OK
+    B->>A: confirm upload
+    A->>A: persist Attachment row in PostgreSQL
+    Note over B,M: Download is the mirror: API signs a GET URL,<br/>browser fetches the file straight from MinIO.
+```
 
 ---
 
@@ -35,7 +112,8 @@ The application is intentionally engineered as the **workload for a real DevOps 
 - No user enumeration on login; JWT algorithm-confusion protection
 - Presigned S3 (MinIO) uploads — files never pass through the API
 - Prometheus `/metrics`, `/healthz` (liveness) and `/readyz` (DB-aware readiness)
-- Structured JSON logs, graceful shutdown, env-based configuration
+- Structured JSON logs, graceful shutdown, env-based (12-factor) configuration
+- Resilient startup — DB and object-storage connections retry with backoff instead of failing hard
 
 ---
 
@@ -50,8 +128,10 @@ The application is intentionally engineered as the **workload for a real DevOps 
 | Object storage   | MinIO (S3-compatible)                                               |
 | Email (dev)      | MailHog                                                             |
 | Monorepo         | Turborepo + pnpm                                                    |
-| Local infra      | Docker Compose                                                      |
-| Target platform  | Kubernetes (k3s)                                                    |
+| Containers       | Multi-stage Docker (distroless API, standalone Next.js)             |
+| Orchestration    | Kubernetes (k3d / k3s), packaged with **Helm**                      |
+| Ingress / TLS    | ingress-nginx + cert-manager (private CA)                           |
+| Secrets          | Sealed Secrets (encrypted secrets committed to git)                 |
 
 ---
 
@@ -68,15 +148,18 @@ clever-sloth/
 │       ├── components/      # UI primitives + board components
 │       └── lib/, store/     # API client, types, auth store
 ├── packages/                # shared config (eslint, typescript, ui)
+├── k8s/
+│   ├── charts/clever-sloth/ # Helm chart (web, api, datastores, ingress)
+│   └── dev/                 # raw reference manifests + SealedSecrets + cert-manager bootstrap
 ├── docker-compose.yml       # local infra: Postgres, Redis, MinIO, MailHog
-└── PROGRESS.md              # detailed build log & roadmap
+└── apps/*/Dockerfile        # multi-stage image builds
 ```
 
 ---
 
 ## 🚀 Getting started (local)
 
-**Prerequisites:** Docker Desktop, Go 1.24+, Node 20+, pnpm 9+.
+**Prerequisites:** Docker Desktop, Go 1.25+, Node 22+, pnpm 9+.
 
 ```bash
 # 1. Start infrastructure (Postgres :5433, Redis, MinIO, MailHog)
@@ -98,6 +181,45 @@ Open http://localhost:3000, sign up, create a project, and start tracking work.
 
 ---
 
+## ☸️ Deploy to Kubernetes
+
+The whole stack is packaged as a Helm chart at `k8s/charts/clever-sloth`. The example below targets a local [k3d](https://k3d.io) cluster.
+
+**One-time cluster prerequisites** (installed via Helm): `ingress-nginx`, `cert-manager`, and the `sealed-secrets` controller. Then bootstrap the private CA used for TLS:
+
+```bash
+kubectl apply -f k8s/dev/tls.yaml          # SelfSigned + CA ClusterIssuers
+```
+
+**Build & load images** (k3d uses its own containerd, so images are imported, not pulled):
+
+```bash
+docker build -t clever-sloth-api:dev ./apps/api
+docker build -f apps/web/Dockerfile \
+  --build-arg NEXT_PUBLIC_API_URL=https://clever-sloth.local/api/v1 \
+  -t clever-sloth-web:dev .
+k3d image import clever-sloth-api:dev clever-sloth-web:dev -c clever-sloth
+```
+
+**Secrets — encrypted, in git.** Real values live only in your cluster; the repo holds `SealedSecret`s that only the in-cluster controller can decrypt:
+
+```bash
+# seal a Secret (repeat per secret), commit the *-sealed.yaml output, then apply
+kubeseal --format yaml -f my-secret.yaml > k8s/dev/secrets/my-secret-sealed.yaml
+kubectl apply -f k8s/dev/secrets/   # controller decrypts -> real Secrets
+```
+
+**Install the release:**
+
+```bash
+helm install clever-sloth k8s/charts/clever-sloth \
+  -n clever-sloth-dev --create-namespace
+```
+
+Map the hostnames to the cluster in your hosts file (`clever-sloth.local`, `minio.clever-sloth.local` → `127.0.0.1`) and open **https://clever-sloth.local**. The chart parameterizes images, replicas, resources, hostnames, ingress/TLS, and the secrets strategy through `values.yaml`.
+
+---
+
 ## 🔌 API overview
 
 Base path: `/api/v1`
@@ -112,13 +234,13 @@ Base path: `/api/v1`
 
 ---
 
-## 🗺️ Roadmap — the DevOps phases (next)
+## 🗺️ Roadmap — the DevOps journey
 
-The application is the foundation; the next phases turn it into a production-grade, observable, GitOps-managed system on Kubernetes:
+The application is the foundation; these phases turn it into a production-grade, observable, GitOps-managed platform on Kubernetes:
 
-- **Phase 4 — Kubernetes:** multi-stage Docker images, k3s cluster, Helm chart, Ingress + cert-manager (TLS), Sealed Secrets
-- **Phase 5 — Observability:** Prometheus + Grafana dashboards, Loki + Promtail log aggregation, Alertmanager
-- **Phase 6 — Advanced platform:** ArgoCD (GitOps), Linkerd service mesh (mTLS, canary, tracing), HPA, NetworkPolicies, and a **custom Kubernetes Operator** (`CleverSlothProject` CRD)
+- ✅ **Phase 4 — Kubernetes:** multi-stage Docker images, k3d/k3s cluster, **Helm chart**, Ingress + cert-manager (TLS via a private CA), **Sealed Secrets**
+- 🔜 **Phase 5 — Observability:** Prometheus + Grafana dashboards, Loki + Promtail log aggregation, Alertmanager
+- 🔭 **Phase 6 — Advanced platform:** ArgoCD (GitOps), Linkerd service mesh (mTLS, canary, tracing), HPA, NetworkPolicies, and a **custom Kubernetes Operator** (`CleverSlothProject` CRD)
 
 ---
 

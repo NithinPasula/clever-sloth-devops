@@ -17,11 +17,16 @@ type Config struct {
 	LogLevel    string // "debug" | "info" | "warn" | "error"
 
 	// MinIO / S3 object storage (issue attachments).
-	MinioEndpoint  string
+	MinioEndpoint  string // in-cluster endpoint the API talks to (e.g. minio:9000)
 	MinioAccessKey string
 	MinioSecretKey string
 	MinioBucket    string
 	MinioUseSSL    bool
+
+	// Public endpoint used ONLY to sign presigned URLs for the browser. May differ
+	// from MinioEndpoint (e.g. a public HTTPS ingress host). Empty => same as MinioEndpoint.
+	MinioPublicEndpoint string
+	MinioPublicUseSSL   bool
 }
 
 // Load reads configuration from the environment, falling back to sensible
@@ -40,6 +45,9 @@ func Load() *Config {
 		MinioSecretKey: getEnv("MINIO_SECRET_KEY", "minioadmin"),
 		MinioBucket:    getEnv("MINIO_BUCKET", "attachments"),
 		MinioUseSSL:    getEnv("MINIO_USE_SSL", "false") == "true",
+
+		MinioPublicEndpoint: getEnv("MINIO_PUBLIC_ENDPOINT", ""),
+		MinioPublicUseSSL:   getEnv("MINIO_PUBLIC_USE_SSL", "false") == "true",
 	}
 }
 

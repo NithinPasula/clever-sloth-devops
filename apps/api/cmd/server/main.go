@@ -63,14 +63,21 @@ func main() {
 		}
 	}
 
-	// Connect to MinIO for attachments. Non-fatal: if it's down, attachment
-	// endpoints return 503 but the rest of the API works.
-	store, err := storage.New(cfg.MinioEndpoint, cfg.MinioAccessKey, cfg.MinioSecretKey, cfg.MinioBucket, cfg.MinioUseSSL)
+	// Build the MinIO client(s) for attachments. Client construction is local and
+	// does not connect, so it won't fail on a MinIO that's still booting.
+	store, err := storage.New(
+		cfg.MinioEndpoint, cfg.MinioAccessKey, cfg.MinioSecretKey, cfg.MinioBucket, cfg.MinioUseSSL,
+		cfg.MinioPublicEndpoint, cfg.MinioPublicUseSSL,
+	)
 	if err != nil {
-		slog.Error("could not connect to object storage; attachments disabled", "error", err)
+		slog.Error("could not init object storage client; attachments disabled", "error", err)
 		store = nil
 	} else {
-		slog.Info("object storage connected", "bucket", cfg.MinioBucket)
+		slog.Info("object storage client ready", "bucket", cfg.MinioBucket)
+		// Create the bucket in the background, retrying until MinIO is reachable.
+		// This self-heals pod start-order races (API up before MinIO) instead of
+		// permanently disabling uploads.
+		go store.EnsureBucketWithRetry(2*time.Second, 30*time.Second)
 	}
 
 	// WebSocket hub for live board updates.
