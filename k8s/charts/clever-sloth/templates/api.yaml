@@ -17,6 +17,7 @@ data:
   MINIO_BUCKET: {{ .Values.api.config.minioBucket | quote }}
   MINIO_USE_SSL: {{ .Values.api.config.minioUseSSL | quote }}
 ---
+{{- if .Values.secrets.create }}
 apiVersion: v1
 kind: Secret
 metadata:
@@ -34,6 +35,7 @@ stringData:
   MINIO_ACCESS_KEY: {{ .Values.minio.rootUser | quote }}
   MINIO_SECRET_KEY: {{ .Values.minio.rootPassword | quote }}
 ---
+{{- end }}
 apiVersion: apps/v1
 kind: Deployment
 metadata:

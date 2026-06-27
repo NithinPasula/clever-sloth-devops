@@ -7,6 +7,19 @@
 # That keeps real secrets out of git while this file stays safe to commit.
 
 # ----------------------------------------------------------------------------
+# Secrets strategy.
+#   create: false (default) -> the chart renders NO Secrets; they're managed
+#                    out-of-band as SealedSecrets (committed encrypted, decrypted
+#                    by the in-cluster controller). This is the source of truth:
+#                      kubectl apply -f k8s/dev/secrets/<name>-sealed.yaml
+#   create: true  -> opt-in fallback: the chart renders plaintext Secret objects
+#                    from the values below (needs values.local.yaml for real
+#                    values). Enable with:  --set secrets.create=true
+# ----------------------------------------------------------------------------
+secrets:
+  create: false
+
+# ----------------------------------------------------------------------------
 # Postgres — primary database (StatefulSet + headless Service + Secret).
 # ----------------------------------------------------------------------------
 postgres:

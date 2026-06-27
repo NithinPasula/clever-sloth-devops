@@ -8,6 +8,7 @@
 # ---------------------------------------------------------------------------
 # 1) Secret — values come from .Values.postgres.* (real ones via values.local.yaml)
 # ---------------------------------------------------------------------------
+{{- if .Values.secrets.create }}
 apiVersion: v1
 kind: Secret
 metadata:
@@ -22,6 +23,7 @@ stringData:
   POSTGRES_PASSWORD: {{ .Values.postgres.password | quote }}
   POSTGRES_DB: {{ .Values.postgres.database | quote }}
 ---
+{{- end }}
 # ---------------------------------------------------------------------------
 # 2) Service — headless (clusterIP: None) to pair with the StatefulSet.
 # ---------------------------------------------------------------------------

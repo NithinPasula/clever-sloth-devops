@@ -45,9 +45,11 @@ apps/api/cs-api.exe
 # Logs
 *.log
 
-# Kubernetes secrets — never commit real credentials (only *.example.yaml is tracked)
+# Kubernetes secrets — never commit real credentials.
+# Tracked: *.example.yaml templates, README, and *-sealed.yaml (encrypted, git-safe).
 k8s/dev/secrets/*
 !k8s/dev/secrets/*.example.yaml
+!k8s/dev/secrets/*-sealed.yaml
 !k8s/dev/secrets/README.md
 
 # Helm real-secret overrides — only values.local.example.yaml is tracked
