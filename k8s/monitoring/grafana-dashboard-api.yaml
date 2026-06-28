@@ -1,0 +1,174 @@
+# Grafana dashboard for the Clever Sloth API, provisioned as code.
+#
+# How this loads WITHOUT clicking in the UI: the kube-prometheus-stack Grafana
+# pod runs a "sidecar" container that watches the `monitoring` namespace for
+# ConfigMaps carrying the label `grafana_dashboard: "1"`. When it sees one, it
+# writes the JSON to Grafana's provisioning dir and Grafana imports it. Edit +
+# `kubectl apply` and the dashboard updates — no manual export/import.
+#
+# The dashboard uses a `$datasource` template variable (type: datasource) so it
+# binds to whatever Prometheus datasource exists, rather than a hardcoded UID.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: clever-sloth-api-dashboard
+  namespace: monitoring
+  labels:
+    grafana_dashboard: "1"
+  annotations:
+    # Drop it into a dedicated Grafana folder instead of "General".
+    grafana_folder: "Clever Sloth"
+data:
+  clever-sloth-api.json: |
+    {
+      "title": "Clever Sloth — API",
+      "uid": "clever-sloth-api",
+      "tags": ["clever-sloth"],
+      "schemaVersion": 39,
+      "version": 1,
+      "editable": true,
+      "refresh": "30s",
+      "time": { "from": "now-1h", "to": "now" },
+      "templating": {
+        "list": [
+          {
+            "name": "datasource",
+            "type": "datasource",
+            "query": "prometheus",
+            "refresh": 1,
+            "hide": 0,
+            "current": {}
+          }
+        ]
+      },
+      "panels": [
+        {
+          "id": 1,
+          "type": "stat",
+          "title": "Total request rate",
+          "gridPos": { "h": 4, "w": 6, "x": 0, "y": 0 },
+          "datasource": { "type": "prometheus", "uid": "${datasource}" },
+          "fieldConfig": { "defaults": { "unit": "reqps", "decimals": 2 }, "overrides": [] },
+          "options": { "colorMode": "value", "graphMode": "area", "reduceOptions": { "calcs": ["lastNotNull"] } },
+          "targets": [
+            { "refId": "A", "datasource": { "type": "prometheus", "uid": "${datasource}" },
+              "expr": "sum(rate(http_requests_total[5m]))" }
+          ]
+        },
+        {
+          "id": 2,
+          "type": "stat",
+          "title": "Error rate (5xx %)",
+          "gridPos": { "h": 4, "w": 6, "x": 6, "y": 0 },
+          "datasource": { "type": "prometheus", "uid": "${datasource}" },
+          "fieldConfig": {
+            "defaults": {
+              "unit": "percent", "decimals": 2,
+              "thresholds": { "mode": "absolute", "steps": [
+                { "color": "green", "value": null },
+                { "color": "yellow", "value": 1 },
+                { "color": "red", "value": 5 }
+              ] }
+            },
+            "overrides": []
+          },
+          "options": { "colorMode": "background", "graphMode": "area", "reduceOptions": { "calcs": ["lastNotNull"] } },
+          "targets": [
+            { "refId": "A", "datasource": { "type": "prometheus", "uid": "${datasource}" },
+              "expr": "100 * sum(rate(http_requests_total{status=~\"5..\"}[5m])) / clamp_min(sum(rate(http_requests_total[5m])), 1)" }
+          ]
+        },
+        {
+          "id": 3,
+          "type": "stat",
+          "title": "Latency p95",
+          "gridPos": { "h": 4, "w": 6, "x": 12, "y": 0 },
+          "datasource": { "type": "prometheus", "uid": "${datasource}" },
+          "fieldConfig": { "defaults": { "unit": "s", "decimals": 3 }, "overrides": [] },
+          "options": { "colorMode": "value", "graphMode": "area", "reduceOptions": { "calcs": ["lastNotNull"] } },
+          "targets": [
+            { "refId": "A", "datasource": { "type": "prometheus", "uid": "${datasource}" },
+              "expr": "histogram_quantile(0.95, sum(rate(http_request_duration_seconds_bucket[5m])) by (le))" }
+          ]
+        },
+        {
+          "id": 4,
+          "type": "stat",
+          "title": "Latency p99",
+          "gridPos": { "h": 4, "w": 6, "x": 18, "y": 0 },
+          "datasource": { "type": "prometheus", "uid": "${datasource}" },
+          "fieldConfig": { "defaults": { "unit": "s", "decimals": 3 }, "overrides": [] },
+          "options": { "colorMode": "value", "graphMode": "area", "reduceOptions": { "calcs": ["lastNotNull"] } },
+          "targets": [
+            { "refId": "A", "datasource": { "type": "prometheus", "uid": "${datasource}" },
+              "expr": "histogram_quantile(0.99, sum(rate(http_request_duration_seconds_bucket[5m])) by (le))" }
+          ]
+        },
+        {
+          "id": 5,
+          "type": "timeseries",
+          "title": "Request rate by route",
+          "gridPos": { "h": 8, "w": 12, "x": 0, "y": 4 },
+          "datasource": { "type": "prometheus", "uid": "${datasource}" },
+          "fieldConfig": { "defaults": { "unit": "reqps", "custom": { "fillOpacity": 10, "showPoints": "never" } }, "overrides": [] },
+          "options": { "legend": { "displayMode": "table", "placement": "right", "calcs": ["mean", "lastNotNull"] }, "tooltip": { "mode": "multi" } },
+          "targets": [
+            { "refId": "A", "datasource": { "type": "prometheus", "uid": "${datasource}" },
+              "expr": "sum(rate(http_requests_total[5m])) by (route)", "legendFormat": "{{route}}" }
+          ]
+        },
+        {
+          "id": 6,
+          "type": "timeseries",
+          "title": "Request rate by status",
+          "gridPos": { "h": 8, "w": 12, "x": 12, "y": 4 },
+          "datasource": { "type": "prometheus", "uid": "${datasource}" },
+          "fieldConfig": { "defaults": { "unit": "reqps", "custom": { "fillOpacity": 10, "showPoints": "never", "stacking": { "mode": "normal" } } }, "overrides": [] },
+          "options": { "legend": { "displayMode": "list", "placement": "bottom" }, "tooltip": { "mode": "multi" } },
+          "targets": [
+            { "refId": "A", "datasource": { "type": "prometheus", "uid": "${datasource}" },
+              "expr": "sum(rate(http_requests_total[5m])) by (status)", "legendFormat": "{{status}}" }
+          ]
+        },
+        {
+          "id": 7,
+          "type": "timeseries",
+          "title": "Latency quantiles (p50 / p95 / p99)",
+          "gridPos": { "h": 8, "w": 12, "x": 0, "y": 12 },
+          "datasource": { "type": "prometheus", "uid": "${datasource}" },
+          "fieldConfig": { "defaults": { "unit": "s", "custom": { "fillOpacity": 0, "showPoints": "never" } }, "overrides": [] },
+          "options": { "legend": { "displayMode": "list", "placement": "bottom" }, "tooltip": { "mode": "multi" } },
+          "targets": [
+            { "refId": "A", "datasource": { "type": "prometheus", "uid": "${datasource}" },
+              "expr": "histogram_quantile(0.50, sum(rate(http_request_duration_seconds_bucket[5m])) by (le))", "legendFormat": "p50" },
+            { "refId": "B", "datasource": { "type": "prometheus", "uid": "${datasource}" },
+              "expr": "histogram_quantile(0.95, sum(rate(http_request_duration_seconds_bucket[5m])) by (le))", "legendFormat": "p95" },
+            { "refId": "C", "datasource": { "type": "prometheus", "uid": "${datasource}" },
+              "expr": "histogram_quantile(0.99, sum(rate(http_request_duration_seconds_bucket[5m])) by (le))", "legendFormat": "p99" }
+          ]
+        },
+        {
+          "id": 8,
+          "type": "timeseries",
+          "title": "Error rate (5xx %)",
+          "gridPos": { "h": 8, "w": 12, "x": 12, "y": 12 },
+          "datasource": { "type": "prometheus", "uid": "${datasource}" },
+          "fieldConfig": {
+            "defaults": {
+              "unit": "percent",
+              "custom": { "fillOpacity": 15, "showPoints": "never" },
+              "thresholds": { "mode": "absolute", "steps": [
+                { "color": "green", "value": null },
+                { "color": "red", "value": 5 }
+              ] }
+            },
+            "overrides": []
+          },
+          "options": { "legend": { "displayMode": "list", "placement": "bottom" }, "tooltip": { "mode": "single" } },
+          "targets": [
+            { "refId": "A", "datasource": { "type": "prometheus", "uid": "${datasource}" },
+              "expr": "100 * sum(rate(http_requests_total{status=~\"5..\"}[5m])) / clamp_min(sum(rate(http_requests_total[5m])), 1)", "legendFormat": "5xx %" }
+          ]
+        }
+      ]
+    }

@@ -101,6 +101,17 @@ web:
       memory: 256Mi
 
 # ----------------------------------------------------------------------------
+# ServiceMonitor — tells the Prometheus Operator to scrape the API's /metrics.
+# Requires the kube-prometheus-stack CRDs (installed in Phase 5). Set enabled
+# to false when deploying to a cluster WITHOUT the Prometheus Operator, or the
+# install fails on the unknown ServiceMonitor kind.
+# ----------------------------------------------------------------------------
+serviceMonitor:
+  enabled: true
+  path: /metrics
+  interval: 30s
+
+# ----------------------------------------------------------------------------
 # Ingress — routing + TLS. The clusterIssuer is bootstrapped once (k8s/dev/tls.yaml),
 # this chart only references it by name.
 # ----------------------------------------------------------------------------

@@ -1,0 +1,27 @@
+{{- if .Values.serviceMonitor.enabled }}
+# ServiceMonitor — a Prometheus Operator CRD (installed by kube-prometheus-stack
+# in Phase 5). Instead of hand-editing prometheus.yml, we DECLARE the scrape:
+# "find every Service labeled app=api, scrape its 'http' port at /metrics every
+# interval". The operator watches ServiceMonitors and regenerates Prometheus's
+# config. Our monitoring install set serviceMonitorSelectorNilUsesHelmValues=false
+# (+ an empty namespace selector), so a ServiceMonitor in THIS namespace is
+# discovered even though Prometheus lives in the `monitoring` namespace.
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: api
+  namespace: {{ .Release.Namespace }}
+  labels:
+    app: api
+    {{- include "clever-sloth.labels" . | nindent 4 }}
+spec:
+  # Which Service(s) to scrape — matches the `api` Service's labels.
+  selector:
+    matchLabels:
+      app: api
+  endpoints:
+    # `port` is the Service PORT NAME (not a number) — our Service names it "http".
+    - port: http
+      path: {{ .Values.serviceMonitor.path | quote }}
+      interval: {{ .Values.serviceMonitor.interval | quote }}
+{{- end }}

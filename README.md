@@ -13,13 +13,13 @@ Clever Sloth is a full-featured project tracker (a focused, open-source take on 
 
 The application is intentionally engineered as the **workload for a real DevOps journey**: it ships with health/readiness probes, Prometheus metrics, structured logging, graceful shutdown, and 12-factor configuration — so it can be deployed and operated on Kubernetes the way real production systems are.
 
-**Status:** ✅ Application (Phases 1–3) complete · ✅ **Phase 4 — Kubernetes** complete (Helm-packaged, deployed to a local cluster with Ingress, cert-manager TLS, and Sealed Secrets) · 🔜 Phase 5 — Observability.
+**Status:** ✅ Application (Phases 1–3) complete · ✅ **Phase 4 — Kubernetes** complete (Helm-packaged, deployed to a local cluster with Ingress, cert-manager TLS, and Sealed Secrets) · 🚧 **Phase 5 — Observability** in progress (Prometheus + Grafana with live API dashboards).
 
 ---
 
 ## 🏗️ Architecture
 
-Clever Sloth runs as a single Helm release on Kubernetes. A stateless Go API and a Next.js front-end sit behind an NGINX Ingress that terminates TLS; PostgreSQL, Redis, and MinIO provide persistence, cache/pub-sub, and object storage. Secrets are stored in git **encrypted** (Sealed Secrets) and decrypted only inside the cluster.
+Clever Sloth runs as a single Helm release on Kubernetes. A stateless Go API and a Next.js front-end sit behind an NGINX Ingress that terminates TLS; PostgreSQL, Redis, and MinIO provide persistence, cache/pub-sub, and object storage. Secrets are stored in git **encrypted** (Sealed Secrets) and decrypted only inside the cluster. A Prometheus + Grafana stack scrapes the API's metrics and renders live dashboards.
 
 ```mermaid
 flowchart TB
@@ -50,6 +50,11 @@ flowchart TB
             secret["Kubernetes Secrets"]
             ssrc["SealedSecrets<br/>(encrypted, in git)"]
         end
+
+        subgraph monns["monitoring namespace"]
+            prom["Prometheus<br/>(kube-prometheus-stack)"]
+            graf["Grafana<br/>(dashboards)"]
+        end
     end
 
     user -->|"HTTPS · clever-sloth.local"| ingress
@@ -62,6 +67,11 @@ flowchart TB
     api -->|"SQL"| pg
     api -->|"cache · pub/sub"| redis
     api -->|"internal HTTP · bucket ops"| minio
+
+    user -->|"HTTPS · grafana.clever-sloth.local"| ingress
+    ingress -->|"/"| graf
+    prom -. "scrape /metrics" .-> api
+    graf -. "PromQL" .-> prom
 
     cm -. "issues leaf certs" .-> ingress
     ca -. "signs" .- cm
@@ -132,6 +142,7 @@ sequenceDiagram
 | Orchestration    | Kubernetes (k3d / k3s), packaged with **Helm**                      |
 | Ingress / TLS    | ingress-nginx + cert-manager (private CA)                           |
 | Secrets          | Sealed Secrets (encrypted secrets committed to git)                 |
+| Observability    | Prometheus + Grafana (kube-prometheus-stack), provisioned dashboards |
 
 ---
 
@@ -149,7 +160,8 @@ clever-sloth/
 │       └── lib/, store/     # API client, types, auth store
 ├── packages/                # shared config (eslint, typescript, ui)
 ├── k8s/
-│   ├── charts/clever-sloth/ # Helm chart (web, api, datastores, ingress)
+│   ├── charts/clever-sloth/ # Helm chart (web, api, datastores, ingress, ServiceMonitor)
+│   ├── monitoring/          # kube-prometheus-stack values + Grafana API dashboard
 │   └── dev/                 # raw reference manifests + SealedSecrets + cert-manager bootstrap
 ├── docker-compose.yml       # local infra: Postgres, Redis, MinIO, MailHog
 └── apps/*/Dockerfile        # multi-stage image builds
@@ -218,6 +230,22 @@ helm install clever-sloth k8s/charts/clever-sloth \
 
 Map the hostnames to the cluster in your hosts file (`clever-sloth.local`, `minio.clever-sloth.local` → `127.0.0.1`) and open **https://clever-sloth.local**. The chart parameterizes images, replicas, resources, hostnames, ingress/TLS, and the secrets strategy through `values.yaml`.
 
+### Observability
+
+A Prometheus + Grafana stack (`kube-prometheus-stack`) scrapes the API and renders live dashboards. The values file is tuned to run comfortably on a small local cluster:
+
+```bash
+helm repo add prometheus-community https://prometheus-community.github.io/helm-charts
+helm upgrade --install monitoring prometheus-community/kube-prometheus-stack \
+  -n monitoring --create-namespace \
+  -f k8s/monitoring/kube-prometheus-stack.values.yaml
+
+# API metrics dashboard — provisioned from a ConfigMap, auto-loaded by Grafana
+kubectl apply -f k8s/monitoring/grafana-dashboard-api.yaml
+```
+
+A `ServiceMonitor` shipped with the app chart tells Prometheus to scrape the API's `/metrics`. Grafana is exposed at **https://grafana.clever-sloth.local** (same private-CA TLS as the app); the dashboard graphs request rate, error rate, and p50/p95/p99 latency by route.
+
 ---
 
 ## 🔌 API overview
@@ -239,7 +267,7 @@ Base path: `/api/v1`
 The application is the foundation; these phases turn it into a production-grade, observable, GitOps-managed platform on Kubernetes:
 
 - ✅ **Phase 4 — Kubernetes:** multi-stage Docker images, k3d/k3s cluster, **Helm chart**, Ingress + cert-manager (TLS via a private CA), **Sealed Secrets**
-- 🔜 **Phase 5 — Observability:** Prometheus + Grafana dashboards, Loki + Promtail log aggregation, Alertmanager
+- 🚧 **Phase 5 — Observability (in progress):** Prometheus + Grafana with live API dashboards (request rate, error rate, latency percentiles) wired through the Prometheus Operator; Loki + Promtail log aggregation and Alertmanager alerting next
 - 🔭 **Phase 6 — Advanced platform:** ArgoCD (GitOps), Linkerd service mesh (mTLS, canary, tracing), HPA, NetworkPolicies, and a **custom Kubernetes Operator** (`CleverSlothProject` CRD)
 
 ---

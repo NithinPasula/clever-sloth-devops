@@ -1,0 +1,207 @@
+# kube-prometheus-stack — values tuned for a small local k3d cluster.
+#
+# This is NOT one of our charts: it's an OVERRIDE file we feed to the upstream
+# community chart (prometheus-community/kube-prometheus-stack) with `-f`. The
+# chart ships a huge default values.yaml sized for real clusters; everything
+# below either trims it to fit our ~3.8 GB budget or fixes a k3d-specific quirk.
+#
+#   helm upgrade --install monitoring prometheus-community/kube-prometheus-stack \
+#     -n monitoring --create-namespace \
+#     -f k8s/monitoring/kube-prometheus-stack.values.yaml
+#
+# Reference: https://github.com/prometheus-community/helm-charts/tree/main/charts/kube-prometheus-stack
+
+# ---------------------------------------------------------------------------
+# k3d quirk: k3s bundles the control-plane components (scheduler,
+# controller-manager, etcd, kube-proxy) into a single binary and does NOT
+# expose their /metrics on the usual host ports. Leaving these enabled just
+# creates scrape targets that are permanently DOWN — red herrings in the UI.
+# Disable them so "Targets" stays green.
+# ---------------------------------------------------------------------------
+kubeControllerManager:
+  enabled: false
+kubeScheduler:
+  enabled: false
+kubeProxy:
+  enabled: false
+kubeEtcd:
+  enabled: false
+
+# ---------------------------------------------------------------------------
+# Prometheus — the time-series database + scraper.
+# ---------------------------------------------------------------------------
+prometheus:
+  prometheusSpec:
+    # Keep only 2 days of history locally (default is 10d) to save disk.
+    retention: 2d
+
+    # THE most important setting for us. By default the Prometheus Operator only
+    # discovers ServiceMonitors/PodMonitors/Rules that carry the SAME Helm
+    # release label as this install ("release: monitoring"). That means a
+    # ServiceMonitor we create for our API in another namespace would be
+    # silently ignored. Setting these to false makes the operator select ALL
+    # such objects cluster-wide, so step 5.3 "just works".
+    serviceMonitorSelectorNilUsesHelmValues: false
+    podMonitorSelectorNilUsesHelmValues: false
+    ruleSelectorNilUsesHelmValues: false
+    probeSelectorNilUsesHelmValues: false
+
+    # Modest resource envelope so Prometheus can't starve the app.
+    resources:
+      requests:
+        cpu: 100m
+        memory: 256Mi
+      limits:
+        memory: 600Mi
+
+    # Persist the TSDB to a small PVC (survives pod restarts).
+    storageSpec:
+      volumeClaimTemplate:
+        spec:
+          accessModes: ["ReadWriteOnce"]
+          resources:
+            requests:
+              storage: 3Gi
+
+# ---------------------------------------------------------------------------
+# Alertmanager — routes/dedupes/silences fired alerts (step 5.5).
+# DISABLED for now: this is a 7.4 GB host with only ~3.5 GB given to Docker, so
+# we run the leanest stack that still teaches metrics+dashboards. Alertmanager
+# is a whole StatefulSet+PVC we don't need until step 5.5 — flip enabled back to
+# true then. The spec below is kept ready for that moment.
+# ---------------------------------------------------------------------------
+alertmanager:
+  enabled: false
+  alertmanagerSpec:
+    retention: 24h
+    resources:
+      requests:
+        cpu: 10m
+        memory: 32Mi
+      limits:
+        memory: 64Mi
+    storage:
+      volumeClaimTemplate:
+        spec:
+          accessModes: ["ReadWriteOnce"]
+          resources:
+            requests:
+              storage: 1Gi
+
+# ---------------------------------------------------------------------------
+# Grafana — dashboards (step 5.2 will add an Ingress + TLS).
+# Default login is  admin / prom-operator  (fine for a local-only cluster;
+# we deliberately do NOT hardcode a password here so nothing secret lands in
+# git — override with `--set grafana.adminPassword=...` if you want).
+# ---------------------------------------------------------------------------
+grafana:
+  defaultDashboardsTimezone: browser
+
+  # PIN GRAFANA TO THE 11.x LINE. The chart default (Grafana 13) runs a heavy new
+  # internal "grafana-apiserver" (Zanzana authz, unified-storage dual-write, bleve
+  # search indexing, background plugin installs). On this shared 7.4 GB / few-core
+  # box it burned 5.6 CPU CORES and timed out its own requests (500 on GET /),
+  # freezing the host. Grafana 11 has none of that machinery — it idles at
+  # ~100 MiB and a fraction of a core, which is all we need for local dashboards.
+  image:
+    tag: "11.6.0"
+
+  # No-surge rollout. On this RAM-tight node a default rolling update briefly runs
+  # TWO Grafana pods and swaps the VM to a halt. maxSurge:0 means "never start a
+  # new pod before the old one is gone", so only one Grafana pod ever exists. We
+  # keep type RollingUpdate (NOT Recreate) because switching an existing
+  # Deployment to Recreate leaves the old rollingUpdate field behind, which the
+  # API server rejects as invalid. Cost: a few seconds of downtime per upgrade.
+  deploymentStrategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 0
+      maxUnavailable: 1
+
+  resources:
+    requests:
+      cpu: 50m
+      memory: 128Mi
+    limits:
+      # HARD CPU cap: even if Grafana misbehaves it can never again pin the host.
+      cpu: "1"
+      memory: 400Mi
+
+  persistence:
+    enabled: true
+    size: 1Gi
+
+  # Let the dashboard sidecar honor the `grafana_folder` ConfigMap annotation so
+  # our provisioned dashboards land in a named folder ("Clever Sloth") instead of
+  # the catch-all "General". foldersFromFilesStructure makes the provider create
+  # the folders the sidecar lays out on disk.
+  sidecar:
+    dashboards:
+      folderAnnotation: grafana_folder
+      provider:
+        foldersFromFilesStructure: true
+
+  # Reachable at https://grafana.clever-sloth.local (step 5.2). cert-manager sees
+  # the annotation + tls block and auto-issues a cert from our private CA into the
+  # grafana-tls secret; ingress-nginx then serves Grafana over HTTPS (and 308-
+  # redirects http→https, which is what we want for a dashboard).
+  ingress:
+    enabled: true
+    ingressClassName: nginx
+    annotations:
+      cert-manager.io/cluster-issuer: clever-sloth-ca
+    hosts:
+      - grafana.clever-sloth.local
+    path: /
+    pathType: Prefix
+    tls:
+      - secretName: grafana-tls
+        hosts:
+          - grafana.clever-sloth.local
+
+  # Silence the background work that wastes CPU/network on a local box: no update
+  # checks, no plugin auto-updates, no anonymous usage reporting. Also tell Grafana
+  # its PUBLIC url so login redirects / asset links resolve behind the domain.
+  grafana.ini:
+    server:
+      root_url: https://grafana.clever-sloth.local
+    analytics:
+      check_for_updates: false
+      check_for_plugin_updates: false
+      reporting_enabled: false
+
+  # Grafana 11 boots fast, but keep a startup probe so a slow first boot on a busy
+  # node still can't trigger a liveness restart loop (budget 30 * 10s = 5 min).
+  startupProbe:
+    httpGet:
+      path: /api/health
+      port: 3000
+    failureThreshold: 30
+    periodSeconds: 10
+  livenessProbe:
+    httpGet:
+      path: /api/health
+      port: 3000
+    failureThreshold: 5
+    periodSeconds: 15
+    timeoutSeconds: 5
+
+# ---------------------------------------------------------------------------
+# node-exporter (host CPU/mem/disk) + kube-state-metrics (object state).
+# Trim their requests too — single node, low traffic.
+# ---------------------------------------------------------------------------
+prometheus-node-exporter:
+  resources:
+    requests:
+      cpu: 10m
+      memory: 24Mi
+    limits:
+      memory: 48Mi
+
+kube-state-metrics:
+  resources:
+    requests:
+      cpu: 10m
+      memory: 32Mi
+    limits:
+      memory: 64Mi
