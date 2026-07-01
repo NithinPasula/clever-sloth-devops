@@ -1,0 +1,29 @@
+# Grafana datasource for Loki, provisioned as a ConfigMap (Phase 5.6).
+#
+# kube-prometheus-stack's Grafana runs a "datasource sidecar" that watches the
+# `monitoring` namespace for ConfigMaps labeled `grafana_datasource: "1"`, writes
+# their contents into Grafana's provisioning directory, and triggers a reload —
+# so this datasource appears with NO Grafana restart and NO helm upgrade of the
+# monitoring release. (Same sidecar pattern as our dashboard ConfigMap, just a
+# different label.)
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: loki-datasource
+  namespace: monitoring
+  labels:
+    # THE trigger label — the sidecar only picks up ConfigMaps carrying this.
+    grafana_datasource: "1"
+data:
+  loki-datasource.yaml: |
+    apiVersion: 1
+    datasources:
+      - name: Loki
+        type: loki
+        access: proxy
+        # In-cluster address of the Loki single-binary Service (gateway disabled).
+        url: http://loki.monitoring.svc.cluster.local:3100
+        isDefault: false
+        jsonData:
+          # Cap lines returned per query so a broad query can't hammer the browser.
+          maxLines: 1000

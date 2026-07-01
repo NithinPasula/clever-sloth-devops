@@ -1,0 +1,29 @@
+# Promtail — the log SHIPPER (Phase 5.6).
+#
+# Promtail runs as a DaemonSet: one pod per node (we have one node, so one pod).
+# Each pod tails the container log files on its node (/var/log/pods/...), attaches
+# Kubernetes labels via service discovery, and PUSHES the lines to Loki. It's the
+# logs equivalent of node-exporter — an agent on every node.
+#
+#   helm upgrade --install promtail grafana/promtail -n monitoring --version 6.17.1 \
+#     -f k8s/monitoring/promtail.values.yaml
+#
+# The chart's DEFAULT scrape config already does the right thing: it discovers all
+# pods, relabels their logs with namespace / pod / container / app labels, and
+# parses the CRI log format. So the ONLY thing we must override is where to send
+# the logs.
+
+config:
+  clients:
+    # Push to the Loki single-binary Service (port 3100) in this namespace. We
+    # disabled Loki's gateway, so we talk to the Loki Service directly. The
+    # /loki/api/v1/push path is Loki's ingestion endpoint.
+    - url: http://loki.monitoring.svc.cluster.local:3100/loki/api/v1/push
+
+# Promtail is light, but cap it so a log burst can't grow it unbounded.
+resources:
+  requests:
+    cpu: 20m
+    memory: 64Mi
+  limits:
+    memory: 128Mi

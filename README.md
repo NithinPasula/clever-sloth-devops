@@ -13,13 +13,13 @@ Clever Sloth is a full-featured project tracker (a focused, open-source take on 
 
 The application is intentionally engineered as the **workload for a real DevOps journey**: it ships with health/readiness probes, Prometheus metrics, structured logging, graceful shutdown, and 12-factor configuration — so it can be deployed and operated on Kubernetes the way real production systems are.
 
-**Status:** ✅ Application (Phases 1–3) complete · ✅ **Phase 4 — Kubernetes** complete (Helm-packaged, deployed to a local cluster with Ingress, cert-manager TLS, and Sealed Secrets) · 🚧 **Phase 5 — Observability** in progress (Prometheus + Grafana with live API dashboards, plus Alertmanager with SLO alert rules).
+**Status:** ✅ Application (Phases 1–3) complete · ✅ **Phase 4 — Kubernetes** complete (Helm-packaged, deployed to a local cluster with Ingress, cert-manager TLS, and Sealed Secrets) · ✅ **Phase 5 — Observability** complete (Prometheus + Grafana dashboards, Alertmanager with SLO alert rules, and Loki + Promtail log aggregation).
 
 ---
 
 ## 🏗️ Architecture
 
-Clever Sloth runs as a single Helm release on Kubernetes. A stateless Go API and a Next.js front-end sit behind an NGINX Ingress that terminates TLS; PostgreSQL, Redis, and MinIO provide persistence, cache/pub-sub, and object storage. Secrets are stored in git **encrypted** (Sealed Secrets) and decrypted only inside the cluster. A Prometheus + Grafana stack scrapes the API's metrics and renders live dashboards.
+Clever Sloth runs as a single Helm release on Kubernetes. A stateless Go API and a Next.js front-end sit behind an NGINX Ingress that terminates TLS; PostgreSQL, Redis, and MinIO provide persistence, cache/pub-sub, and object storage. Secrets are stored in git **encrypted** (Sealed Secrets) and decrypted only inside the cluster. A full observability stack covers all three pillars: Prometheus scrapes metrics and Grafana renders live dashboards, Alertmanager routes SLO alerts, and Loki + Promtail aggregate logs into Grafana.
 
 ```mermaid
 flowchart TB
@@ -53,8 +53,10 @@ flowchart TB
 
         subgraph monns["monitoring namespace"]
             prom["Prometheus<br/>(kube-prometheus-stack)"]
-            graf["Grafana<br/>(dashboards)"]
+            graf["Grafana<br/>(dashboards + logs)"]
             alert["Alertmanager<br/>(routing / grouping)"]
+            loki["Loki<br/>(log store)"]
+            promtail["Promtail<br/>(per-node log agent)"]
         end
     end
 
@@ -74,6 +76,8 @@ flowchart TB
     prom -. "scrape /metrics" .-> api
     graf -. "PromQL" .-> prom
     prom -. "fires SLO alerts" .-> alert
+    promtail -. "ship pod logs" .-> loki
+    graf -. "LogQL" .-> loki
 
     cm -. "issues leaf certs" .-> ingress
     ca -. "signs" .- cm
@@ -144,7 +148,7 @@ sequenceDiagram
 | Orchestration    | Kubernetes (k3d / k3s), packaged with **Helm**                      |
 | Ingress / TLS    | ingress-nginx + cert-manager (private CA)                           |
 | Secrets          | Sealed Secrets (encrypted secrets committed to git)                 |
-| Observability    | Prometheus + Grafana (kube-prometheus-stack), provisioned dashboards, Alertmanager + SLO alert rules |
+| Observability    | Prometheus + Grafana (kube-prometheus-stack), provisioned dashboards, Alertmanager + SLO alert rules, Loki + Promtail logs |
 
 ---
 
@@ -163,7 +167,7 @@ clever-sloth/
 ├── packages/                # shared config (eslint, typescript, ui)
 ├── k8s/
 │   ├── charts/clever-sloth/ # Helm chart (web, api, datastores, ingress, ServiceMonitor)
-│   ├── monitoring/          # kube-prometheus-stack values + Grafana API dashboard
+│   ├── monitoring/          # kube-prometheus-stack + Grafana dashboard, alert rules, Loki + Promtail
 │   └── dev/                 # raw reference manifests + SealedSecrets + cert-manager bootstrap
 ├── docker-compose.yml       # local infra: Postgres, Redis, MinIO, MailHog
 └── apps/*/Dockerfile        # multi-stage image builds
@@ -253,6 +257,21 @@ A `ServiceMonitor` shipped with the app chart tells Prometheus to scrape the API
 
 Alerting is handled by **Alertmanager** (grouping, deduplication, and inhibition of related alerts). A `PrometheusRule` defines SLO alerts on the API's own golden signals — availability (`up == 0`), 5xx error rate (warning above 5%, critical above 25%), and p95 latency above 1s — layered on top of the platform alerts that ship with `kube-prometheus-stack`.
 
+Logs are handled by **Loki + Promtail** — the third observability pillar. Promtail runs as a DaemonSet, tailing every pod's logs and shipping them to Loki (deployed single-binary with filesystem storage to stay light on a local cluster):
+
+```bash
+helm repo add grafana https://grafana.github.io/helm-charts
+helm upgrade --install loki grafana/loki -n monitoring --version 6.55.0 \
+  -f k8s/monitoring/loki.values.yaml
+helm upgrade --install promtail grafana/promtail -n monitoring --version 6.17.1 \
+  -f k8s/monitoring/promtail.values.yaml
+
+# Register Loki as a Grafana datasource (auto-loaded by the datasource sidecar)
+kubectl apply -f k8s/monitoring/loki-datasource.yaml
+```
+
+Loki is added to Grafana as a datasource, so logs are queryable with **LogQL** in Grafana → Explore (e.g. `{namespace="clever-sloth-dev", container="api"} | json` to parse the API's structured JSON logs).
+
 ---
 
 ## 🔌 API overview
@@ -274,7 +293,7 @@ Base path: `/api/v1`
 The application is the foundation; these phases turn it into a production-grade, observable, GitOps-managed platform on Kubernetes:
 
 - ✅ **Phase 4 — Kubernetes:** multi-stage Docker images, k3d/k3s cluster, **Helm chart**, Ingress + cert-manager (TLS via a private CA), **Sealed Secrets**
-- 🚧 **Phase 5 — Observability (in progress):** Prometheus + Grafana with live API dashboards (request rate, error rate, latency percentiles) wired through the Prometheus Operator, plus Alertmanager with SLO alert rules (availability, error rate, latency); Loki + Promtail log aggregation next
+- ✅ **Phase 5 — Observability:** all three pillars — Prometheus + Grafana live API dashboards (request rate, error rate, latency percentiles) via the Prometheus Operator, Alertmanager with SLO alert rules (availability, error rate, latency), and Loki + Promtail log aggregation queryable in Grafana with LogQL
 - 🔭 **Phase 6 — Advanced platform:** ArgoCD (GitOps), Linkerd service mesh (mTLS, canary, tracing), HPA, NetworkPolicies, and a **custom Kubernetes Operator** (`CleverSlothProject` CRD)
 
 ---

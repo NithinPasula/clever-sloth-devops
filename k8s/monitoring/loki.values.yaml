@@ -1,0 +1,107 @@
+# Loki — values for a SMALL, local, single-binary install (Phase 5.6).
+#
+# Loki is the "logs" pillar (Prometheus was "metrics"). Unlike a full-text log
+# store (Elasticsearch), Loki indexes ONLY a small set of labels (namespace, pod,
+# container, ...) and stores the raw log lines compressed — so it's cheap on RAM
+# and disk, which is exactly what this box needs. You query it with LogQL, which
+# deliberately mirrors PromQL.
+#
+# This is an OVERRIDE file for the upstream chart:
+#   helm upgrade --install loki grafana/loki -n monitoring --version 6.55.0 \
+#     -f k8s/monitoring/loki.values.yaml
+#
+# Reference: https://github.com/grafana/loki/tree/main/production/helm/loki
+
+# The chart can deploy Loki three ways. Default is "SimpleScalable" (separate
+# read/write/backend Deployments) — overkill and too heavy for us. SingleBinary
+# runs the whole thing as ONE StatefulSet pod: perfect for a local install doing
+# a few MB/day of logs.
+deploymentMode: SingleBinary
+
+loki:
+  # No multi-tenant auth on a local cluster (all logs land in the "fake" tenant).
+  auth_enabled: false
+
+  commonConfig:
+    # Single instance => one copy of each chunk (default is 3, which needs 3 pods).
+    replication_factor: 1
+
+  # Store chunks + index on a local PVC (see singleBinary.persistence below), not
+  # S3/MinIO. Simplest, zero external deps. (Pointing this at the cluster's MinIO
+  # is a nice future exercise, but filesystem keeps Loki self-contained for now.)
+  storage:
+    type: filesystem
+
+  # Loki REQUIRES an explicit schema. v13 + the TSDB index is the current best
+  # practice (small, fast, supports structured metadata). One period is plenty.
+  schemaConfig:
+    configs:
+      - from: "2024-01-01"
+        store: tsdb
+        object_store: filesystem
+        schema: v13
+        index:
+          prefix: index_
+          period: 24h
+
+  limits_config:
+    # Keep a week of logs, then the compactor deletes them (see below).
+    retention_period: 168h
+    # Enables the /loki/api/v1/index/volume endpoint so Grafana can show log-volume
+    # bars above the log stream.
+    volume_enabled: true
+
+  # The compactor is what ACTUALLY enforces retention_period (Loki won't delete
+  # without it). delete_request_store must be set for retention to run.
+  compactor:
+    retention_enabled: true
+    delete_request_store: filesystem
+
+# The single StatefulSet pod: one replica, a small PVC, tight resources.
+singleBinary:
+  replicas: 1
+  persistence:
+    enabled: true
+    size: 3Gi
+  resources:
+    requests:
+      cpu: 100m
+      memory: 128Mi
+    limits:
+      # Loki can spike memory on heavy queries; 400Mi is generous for our volume.
+      # If it ever OOMs under a big query, raise this — don't lower the query.
+      memory: 400Mi
+
+# ---------------------------------------------------------------------------
+# Turn OFF every optional component the chart enables by default. On a real
+# cluster these help; on a 3.5 GB box each is wasted RAM.
+# ---------------------------------------------------------------------------
+gateway:
+  enabled: false        # nginx in front of Loki — Grafana/Promtail hit the Service directly
+chunksCache:
+  enabled: false        # a memcached Deployment — not worth the RAM at our volume
+resultsCache:
+  enabled: false        # another memcached — same
+lokiCanary:
+  enabled: false        # a DaemonSet that writes/reads canary logs to self-test Loki
+test:
+  enabled: false        # helm test pod
+
+# SimpleScalable/Distributed components — force to zero so nothing from those
+# modes is created while we run SingleBinary.
+read:
+  replicas: 0
+write:
+  replicas: 0
+backend:
+  replicas: 0
+
+# The chart's own ServiceMonitor/rules for monitoring Loki itself — skip it, we
+# don't need Prometheus scraping Loki on this box.
+monitoring:
+  selfMonitoring:
+    enabled: false
+    grafanaAgent:
+      installOperator: false
+  serviceMonitor:
+    enabled: false
