@@ -13,7 +13,7 @@ Clever Sloth is a full-featured project tracker (a focused, open-source take on 
 
 The application is intentionally engineered as the **workload for a real DevOps journey**: it ships with health/readiness probes, Prometheus metrics, structured logging, graceful shutdown, and 12-factor configuration — so it can be deployed and operated on Kubernetes the way real production systems are.
 
-**Status:** ✅ Application (Phases 1–3) complete · ✅ **Phase 4 — Kubernetes** complete (Helm-packaged, deployed to a local cluster with Ingress, cert-manager TLS, and Sealed Secrets) · 🚧 **Phase 5 — Observability** in progress (Prometheus + Grafana with live API dashboards).
+**Status:** ✅ Application (Phases 1–3) complete · ✅ **Phase 4 — Kubernetes** complete (Helm-packaged, deployed to a local cluster with Ingress, cert-manager TLS, and Sealed Secrets) · 🚧 **Phase 5 — Observability** in progress (Prometheus + Grafana with live API dashboards, plus Alertmanager with SLO alert rules).
 
 ---
 
@@ -54,6 +54,7 @@ flowchart TB
         subgraph monns["monitoring namespace"]
             prom["Prometheus<br/>(kube-prometheus-stack)"]
             graf["Grafana<br/>(dashboards)"]
+            alert["Alertmanager<br/>(routing / grouping)"]
         end
     end
 
@@ -72,6 +73,7 @@ flowchart TB
     ingress -->|"/"| graf
     prom -. "scrape /metrics" .-> api
     graf -. "PromQL" .-> prom
+    prom -. "fires SLO alerts" .-> alert
 
     cm -. "issues leaf certs" .-> ingress
     ca -. "signs" .- cm
@@ -142,7 +144,7 @@ sequenceDiagram
 | Orchestration    | Kubernetes (k3d / k3s), packaged with **Helm**                      |
 | Ingress / TLS    | ingress-nginx + cert-manager (private CA)                           |
 | Secrets          | Sealed Secrets (encrypted secrets committed to git)                 |
-| Observability    | Prometheus + Grafana (kube-prometheus-stack), provisioned dashboards |
+| Observability    | Prometheus + Grafana (kube-prometheus-stack), provisioned dashboards, Alertmanager + SLO alert rules |
 
 ---
 
@@ -242,9 +244,14 @@ helm upgrade --install monitoring prometheus-community/kube-prometheus-stack \
 
 # API metrics dashboard — provisioned from a ConfigMap, auto-loaded by Grafana
 kubectl apply -f k8s/monitoring/grafana-dashboard-api.yaml
+
+# SLO alert rules for the API (evaluated by Prometheus, routed by Alertmanager)
+kubectl apply -f k8s/monitoring/prometheus-rules.yaml
 ```
 
 A `ServiceMonitor` shipped with the app chart tells Prometheus to scrape the API's `/metrics`. Grafana is exposed at **https://grafana.clever-sloth.local** (same private-CA TLS as the app); the dashboard graphs request rate, error rate, and p50/p95/p99 latency by route.
+
+Alerting is handled by **Alertmanager** (grouping, deduplication, and inhibition of related alerts). A `PrometheusRule` defines SLO alerts on the API's own golden signals — availability (`up == 0`), 5xx error rate (warning above 5%, critical above 25%), and p95 latency above 1s — layered on top of the platform alerts that ship with `kube-prometheus-stack`.
 
 ---
 
@@ -267,7 +274,7 @@ Base path: `/api/v1`
 The application is the foundation; these phases turn it into a production-grade, observable, GitOps-managed platform on Kubernetes:
 
 - ✅ **Phase 4 — Kubernetes:** multi-stage Docker images, k3d/k3s cluster, **Helm chart**, Ingress + cert-manager (TLS via a private CA), **Sealed Secrets**
-- 🚧 **Phase 5 — Observability (in progress):** Prometheus + Grafana with live API dashboards (request rate, error rate, latency percentiles) wired through the Prometheus Operator; Loki + Promtail log aggregation and Alertmanager alerting next
+- 🚧 **Phase 5 — Observability (in progress):** Prometheus + Grafana with live API dashboards (request rate, error rate, latency percentiles) wired through the Prometheus Operator, plus Alertmanager with SLO alert rules (availability, error rate, latency); Loki + Promtail log aggregation next
 - 🔭 **Phase 6 — Advanced platform:** ArgoCD (GitOps), Linkerd service mesh (mTLS, canary, tracing), HPA, NetworkPolicies, and a **custom Kubernetes Operator** (`CleverSlothProject` CRD)
 
 ---

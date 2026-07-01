@@ -1,0 +1,76 @@
+# PrometheusRule — a Prometheus Operator CRD. The operator watches these objects
+# and compiles them into Prometheus's rule files (no hand-editing prometheus.yml).
+# Our monitoring install set `ruleSelectorNilUsesHelmValues: false`, so a
+# PrometheusRule in ANY namespace is discovered cluster-wide.
+#
+# kube-prometheus-stack already ships ~15 groups of INFRASTRUCTURE alerts
+# (KubePodCrashLooping, TargetDown, node/disk/kubelet/etcd, OOM via the
+# kubernetes-apps group, etc.). There is no point re-declaring those. This file
+# adds only what the defaults can't know about: SLO-style alerts on our OWN
+# instrumented API metrics (`http_requests_total` / `http_request_duration_
+# seconds`), which the Go API has exposed at /metrics since Phase 1. Alerting on
+# your application's golden signals — availability, errors, latency — is the
+# pedagogically interesting half of alerting.
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: clever-sloth-api
+  namespace: monitoring
+  labels:
+    app: clever-sloth
+    # Not strictly required (the operator selects all rules cluster-wide), but the
+    # release label is the conventional way to tag rules for this stack.
+    release: monitoring
+spec:
+  groups:
+    - name: clever-sloth-api.rules
+      rules:
+        # ---- Availability -------------------------------------------------
+        # `up` is the synthetic metric Prometheus writes for EVERY scrape target
+        # (1 = scrape succeeded, 0 = failed). No API instance has been scrapeable
+        # for 2 minutes. Job-scoped so the alert names the API specifically; the
+        # generic TargetDown default would also fire, but this reads clearer.
+        - alert: CleverSlothApiDown
+          expr: up{job="api"} == 0
+          for: 2m
+          labels:
+            severity: critical
+          annotations:
+            summary: 'Clever Sloth API is down'
+            description: 'No api target in {{ $labels.namespace }} has responded to scrapes for 2m.'
+
+        # ---- Error rate (SLO) ---------------------------------------------
+        # Share of 5xx responses over the last 5m. clamp_min(...,1) guards the
+        # divide-by-zero when traffic is ~0 (and stops a single stray 500 on an
+        # idle box from reading as 100%). Same signal, two severities: >5% warns,
+        # >25% is critical. The inhibit_rule in the AM config mutes the warning
+        # while the critical is firing, so one incident = one notification.
+        - alert: CleverSlothApiHighErrorRate
+          expr: 100 * sum(rate(http_requests_total{job="api",status=~"5.."}[5m])) / clamp_min(sum(rate(http_requests_total{job="api"}[5m])), 1) > 5
+          for: 5m
+          labels:
+            severity: warning
+          annotations:
+            summary: 'Clever Sloth API 5xx error rate above 5%'
+            description: '5xx responses are {{ $value | printf "%.1f" }}% of API traffic (>5% for 5m).'
+        - alert: CleverSlothApiHighErrorRate
+          expr: 100 * sum(rate(http_requests_total{job="api",status=~"5.."}[5m])) / clamp_min(sum(rate(http_requests_total{job="api"}[5m])), 1) > 25
+          for: 5m
+          labels:
+            severity: critical
+          annotations:
+            summary: 'Clever Sloth API 5xx error rate above 25%'
+            description: '5xx responses are {{ $value | printf "%.1f" }}% of API traffic (>25% for 5m).'
+
+        # ---- Latency (SLO) ------------------------------------------------
+        # 95th-percentile request latency over 5m, reconstructed from the
+        # histogram buckets with histogram_quantile(). Firing means the slowest
+        # 5% of requests take more than 1s, sustained for 10m.
+        - alert: CleverSlothApiHighLatencyP95
+          expr: histogram_quantile(0.95, sum(rate(http_request_duration_seconds_bucket{job="api"}[5m])) by (le)) > 1
+          for: 10m
+          labels:
+            severity: warning
+          annotations:
+            summary: 'Clever Sloth API p95 latency above 1s'
+            description: 'API p95 latency is {{ $value | printf "%.2f" }}s (>1s for 10m).'

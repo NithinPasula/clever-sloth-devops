@@ -64,14 +64,15 @@ prometheus:
               storage: 3Gi
 
 # ---------------------------------------------------------------------------
-# Alertmanager — routes/dedupes/silences fired alerts (step 5.5).
-# DISABLED for now: this is a 7.4 GB host with only ~3.5 GB given to Docker, so
-# we run the leanest stack that still teaches metrics+dashboards. Alertmanager
-# is a whole StatefulSet+PVC we don't need until step 5.5 — flip enabled back to
-# true then. The spec below is kept ready for that moment.
+# Alertmanager — the notification brain (step 5.5). Prometheus only DECIDES an
+# alert is firing (evaluates the rule expressions); Alertmanager decides what to
+# DO with it: GROUP related alerts into one notification, DEDUPLICATE identical
+# alerts from replicas, SILENCE/INHIBIT noisy ones, and ROUTE each to a receiver
+# (email/Slack/webhook). It's a small StatefulSet + 1Gi PVC (~32-64Mi RAM), which
+# is why it was left off until now on this RAM-tight box.
 # ---------------------------------------------------------------------------
 alertmanager:
-  enabled: false
+  enabled: true
   alertmanagerSpec:
     retention: 24h
     resources:
@@ -87,6 +88,47 @@ alertmanager:
           resources:
             requests:
               storage: 1Gi
+
+  # Our Alertmanager routing tree — this REPLACES the chart's default config.
+  # No external notifier is wired here: this is a local-only box with no SMTP or
+  # Slack, so fired alerts are viewed in the Alertmanager UI (port-forward 9093)
+  # and in Grafana → Alerting. Wiring a real channel later is a one-block change
+  # (add an `email_configs:`/`slack_configs:`/`webhook_configs:` under a receiver).
+  # The teaching value here is the ROUTING logic itself:
+  config:
+    global:
+      resolve_timeout: 5m
+    route:
+      # Collapse every alert that shares these labels into ONE notification
+      # instead of one-per-alert (e.g. 20 pods OOMing => a single grouped page).
+      group_by: ['alertname', 'namespace']
+      group_wait: 30s          # wait 30s after the first alert to collect siblings
+      group_interval: 5m       # then, new alerts joining an existing group wait 5m
+      repeat_interval: 4h      # re-notify an un-resolved group at most every 4h
+      receiver: 'default'
+      routes:
+        # The chart ships a "Watchdog" alert that fires FOREVER by design — a
+        # dead-man's-switch. Route it to a black-hole receiver so it never
+        # notifies; instead, an external uptime check would alert on its ABSENCE
+        # (no Watchdog => the whole alerting pipeline is broken).
+        - matchers:
+            - alertname = "Watchdog"
+          receiver: 'null'
+          group_wait: 0s
+          repeat_interval: 1h
+    inhibit_rules:
+      # When a CRITICAL is firing for an alertname, suppress the matching WARNING
+      # for the same alert+namespace so you aren't notified twice for one problem.
+      - source_matchers:
+          - severity = "critical"
+        target_matchers:
+          - severity = "warning"
+        equal: ['alertname', 'namespace']
+    receivers:
+      # Empty receivers = alert is tracked and visible in the UI but sends no
+      # external notification. Add *_configs here to deliver somewhere real.
+      - name: 'default'
+      - name: 'null'
 
 # ---------------------------------------------------------------------------
 # Grafana — dashboards (step 5.2 will add an Ingress + TLS).
@@ -199,9 +241,39 @@ prometheus-node-exporter:
       memory: 48Mi
 
 kube-state-metrics:
+  # ksm was crashlooping on this box. With a tight 64Mi limit its Go heap sat right
+  # at the ceiling during the full-cluster resource sync, so the runtime GC ran
+  # almost continuously (~1 whole core of CPU) to stay under the limit. That starved
+  # the trivial /livez handler past its 5s timeout, kubelet failed the liveness
+  # probe and killed the pod, and the resync started over — a restart loop. Two
+  # complementary fixes:
+  #   (1) collectors: gather ONLY the resources our dashboards/alerts use. Dropping
+  #       secrets/configmaps/leases/webhooks/etc. slashes both heap size and the
+  #       API-server list/watch load (this is also what silenced the "client-side
+  #       throttling" warnings in ksm's logs).
+  #   (2) a 128Mi limit so the heap has headroom and GC isn't thrashing.
+  # Net effect: ksm idles at a few millicores again and the liveness probe passes.
+  collectors:
+    - cronjobs
+    - daemonsets
+    - deployments
+    - horizontalpodautoscalers
+    - ingresses
+    - jobs
+    - limitranges
+    - namespaces
+    - nodes
+    - persistentvolumeclaims
+    - persistentvolumes
+    - poddisruptionbudgets
+    - pods
+    - replicasets
+    - resourcequotas
+    - statefulsets
+    - storageclasses
   resources:
     requests:
-      cpu: 10m
-      memory: 32Mi
+      cpu: 25m
+      memory: 48Mi
     limits:
-      memory: 64Mi
+      memory: 128Mi
