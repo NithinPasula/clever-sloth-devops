@@ -179,6 +179,10 @@ clever-sloth/
 
 ## 🚀 Getting started (local)
 
+> 📘 **New here?** See **[docs/GETTING_STARTED.md](docs/GETTING_STARTED.md)** for the full
+> step-by-step guide — local dev *and* the complete Kubernetes/GitOps/observability
+> deployment, including exactly what to change before running and how to access every feature.
+
 **Prerequisites:** Docker Desktop, Go 1.25+, Node 22+, pnpm 9+.
 
 ```bash
