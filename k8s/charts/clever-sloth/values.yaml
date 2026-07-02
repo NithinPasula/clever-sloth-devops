@@ -128,3 +128,17 @@ ingress:
   minioPublicUseSSL: "true"
   # Web is now built with an https API URL, so we force http->https everywhere.
   sslRedirect: true
+
+# ----------------------------------------------------------------------------
+# NetworkPolicy — least-privilege pod firewalling (templates/networkpolicy.yaml).
+# Default-deny INGRESS for the namespace, then allow only the real paths:
+#   web  <- ingress            api    <- ingress + monitoring
+#   postgres/redis <- api      minio  <- api + ingress
+# Egress is left open (DNS-safe). Requires a CNI that enforces NetworkPolicy
+# (k3s does, in-process). ingressNamespace/monitoringNamespace let the external
+# namespace names be overridden per cluster.
+# ----------------------------------------------------------------------------
+networkPolicy:
+  enabled: true
+  ingressNamespace: ingress-nginx
+  monitoringNamespace: monitoring
