@@ -137,7 +137,9 @@ sequenceDiagram
 
 | Layer            | Technology                                                          |
 | ---------------- | ------------------------------------------------------------------- |
-| Frontend         | Next.js 16, React 19, TypeScript, Tailwind CSS v4, dnd-kit, Zustand |
+| Frontend         | Next.js 16, React 19, TypeScript, Tailwind CSS v4, Radix UI, Zustand |
+| Drag & drop      | Pragmatic Drag and Drop (the Trello/Jira engine) — animated drop indicators + auto-scroll |
+| UI / UX          | Atlassian-clean design system, dark mode, ⌘K command palette (cmdk), toasts (sonner), motion |
 | Backend          | Go, Fiber, GORM                                                     |
 | Database         | PostgreSQL 16                                                       |
 | Cache / realtime | Redis                                                               |
@@ -162,7 +164,7 @@ clever-sloth/
 │   │   └── internal/        # config, database, models, handlers, auth, ws, storage, observability
 │   └── web/                 # Next.js 16 frontend
 │       ├── app/             # routes (auth, projects, board, backlog, sprints, dashboard)
-│       ├── components/      # UI primitives + board components
+│       ├── components/      # UI primitives (Radix), app shell (sidebar/topbar/⌘K), board
 │       └── lib/, store/     # API client, types, auth store
 ├── packages/                # shared config (eslint, typescript, ui)
 ├── k8s/

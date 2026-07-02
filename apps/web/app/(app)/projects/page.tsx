@@ -2,13 +2,15 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import { Plus, FolderKanban } from "lucide-react";
+import { Plus, FolderKanban, ArrowRight } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Modal } from "@/components/ui/modal";
+import { Skeleton } from "@/components/ui/skeleton";
+import { toast } from "@/components/ui/toaster";
 import { apiGet, apiPost } from "@/lib/api";
 import type { Project, Workspace } from "@/lib/types";
 
@@ -55,6 +57,7 @@ export default function ProjectsPage() {
       setKey("");
       setName("");
       setDescription("");
+      toast.success(`Project ${project.key} created`);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Could not create project");
     } finally {
@@ -63,55 +66,72 @@ export default function ProjectsPage() {
   }
 
   return (
-    <div className="mx-auto max-w-5xl px-6 py-8">
-      <div className="mb-8 flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl font-bold tracking-tight">Projects</h1>
-          <p className="text-sm text-muted-foreground">
-            {workspace ? workspace.name : "Loading workspace…"}
-          </p>
-        </div>
-        <Button onClick={() => setOpen(true)} disabled={!workspace}>
-          <Plus className="h-4 w-4" />
-          New project
-        </Button>
-      </div>
-
-      {loading ? (
-        <p className="text-sm text-muted-foreground">Loading projects…</p>
-      ) : projects.length === 0 ? (
-        <div className="flex flex-col items-center justify-center rounded-lg border border-dashed py-20 text-center">
-          <FolderKanban className="mb-3 h-10 w-10 text-muted-foreground" />
-          <h3 className="font-semibold">No projects yet</h3>
-          <p className="mb-4 mt-1 max-w-sm text-sm text-muted-foreground">
-            Create your first project to start tracking issues on a board.
-          </p>
+    <div className="h-full overflow-y-auto">
+      <div className="mx-auto max-w-6xl px-6 py-8">
+        <div className="mb-8 flex items-end justify-between">
+          <div>
+            <h1 className="text-2xl font-bold tracking-tight">Projects</h1>
+            <p className="mt-1 text-sm text-muted-foreground">
+              {workspace ? workspace.name : "Loading workspace…"}
+            </p>
+          </div>
           <Button onClick={() => setOpen(true)} disabled={!workspace}>
             <Plus className="h-4 w-4" />
             New project
           </Button>
         </div>
-      ) : (
-        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-          {projects.map((p) => (
-            <Link
-              key={p.id}
-              href={`/projects/${p.id}`}
-              className="group rounded-lg border bg-card p-5 shadow-sm transition-colors hover:border-primary/50"
-            >
-              <div className="mb-3 flex h-9 w-9 items-center justify-center rounded-md bg-primary/15 text-sm font-bold text-primary">
-                {p.key}
+
+        {loading ? (
+          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+            {Array.from({ length: 6 }).map((_, i) => (
+              <div key={i} className="rounded-lg border bg-card p-5">
+                <Skeleton className="mb-4 h-9 w-9 rounded-md" />
+                <Skeleton className="mb-2 h-4 w-2/3" />
+                <Skeleton className="h-3 w-full" />
               </div>
-              <h3 className="font-semibold group-hover:text-primary">{p.name}</h3>
-              {p.description && (
-                <p className="mt-1 line-clamp-2 text-sm text-muted-foreground">
-                  {p.description}
-                </p>
-              )}
-            </Link>
-          ))}
-        </div>
-      )}
+            ))}
+          </div>
+        ) : projects.length === 0 ? (
+          <div className="flex flex-col items-center justify-center rounded-xl border border-dashed bg-card py-20 text-center">
+            <div className="mb-4 flex h-14 w-14 items-center justify-center rounded-full bg-primary/10">
+              <FolderKanban className="h-7 w-7 text-primary" />
+            </div>
+            <h3 className="text-base font-semibold">No projects yet</h3>
+            <p className="mb-5 mt-1 max-w-sm text-sm text-muted-foreground">
+              Create your first project to start tracking issues on a board.
+            </p>
+            <Button onClick={() => setOpen(true)} disabled={!workspace}>
+              <Plus className="h-4 w-4" />
+              New project
+            </Button>
+          </div>
+        ) : (
+          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+            {projects.map((p) => (
+              <Link
+                key={p.id}
+                href={`/projects/${p.id}`}
+                className="group relative rounded-lg border bg-card p-5 shadow-sm transition-all hover:-translate-y-0.5 hover:border-primary/40 hover:shadow-md"
+              >
+                <div className="mb-3 flex h-9 w-9 items-center justify-center rounded-md bg-primary/15 text-sm font-bold text-primary">
+                  {p.key}
+                </div>
+                <h3 className="font-semibold group-hover:text-primary">{p.name}</h3>
+                {p.description ? (
+                  <p className="mt-1 line-clamp-2 text-sm text-muted-foreground">
+                    {p.description}
+                  </p>
+                ) : (
+                  <p className="mt-1 text-sm italic text-muted-foreground/60">
+                    No description
+                  </p>
+                )}
+                <ArrowRight className="absolute right-5 top-5 h-4 w-4 -translate-x-1 text-primary opacity-0 transition-all group-hover:translate-x-0 group-hover:opacity-100" />
+              </Link>
+            ))}
+          </div>
+        )}
+      </div>
 
       <Modal
         open={open}

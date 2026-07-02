@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect } from "react";
+import * as Dialog from "@radix-ui/react-dialog";
 import { X } from "lucide-react";
 
 import { cn } from "@/lib/utils";
@@ -15,8 +15,10 @@ interface ModalProps {
 }
 
 /**
- * A lightweight controlled modal — no Radix dependency. Closes on backdrop
- * click and Escape. Good enough for our create/edit dialogs.
+ * Controlled modal built on Radix Dialog — gives us accessible focus trapping,
+ * scroll locking, Escape/overlay dismissal and enter/exit animation for free.
+ * The API is intentionally the same simple `open / onClose / title` shape the
+ * rest of the app already uses, so call sites didn't have to change.
  */
 export function Modal({
   open,
@@ -26,39 +28,40 @@ export function Modal({
   children,
   className,
 }: ModalProps) {
-  useEffect(() => {
-    if (!open) return;
-    const onKey = (e: KeyboardEvent) => e.key === "Escape" && onClose();
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [open, onClose]);
-
-  if (!open) return null;
-
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-      <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" onClick={onClose} />
-      <div
-        role="dialog"
-        aria-modal="true"
-        className={cn(
-          "relative z-10 w-full max-w-md rounded-lg border bg-card p-6 shadow-xl",
-          className,
-        )}
-      >
-        <button
-          onClick={onClose}
-          className="absolute right-4 top-4 text-muted-foreground transition-colors hover:text-foreground"
-          aria-label="Close"
+    <Dialog.Root open={open} onOpenChange={(o) => !o && onClose()}>
+      <Dialog.Portal>
+        <Dialog.Overlay className="animate-overlay fixed inset-0 z-50 bg-slate-900/40 backdrop-blur-[2px]" />
+        <Dialog.Content
+          className={cn(
+            "animate-content fixed left-1/2 top-1/2 z-50 w-[calc(100vw-2rem)] max-w-md -translate-x-1/2 -translate-y-1/2 rounded-xl border bg-card p-6 shadow-2xl focus:outline-none",
+            className,
+          )}
         >
-          <X className="h-4 w-4" />
-        </button>
-        {title && <h2 className="text-lg font-semibold">{title}</h2>}
-        {description && (
-          <p className="mt-1 text-sm text-muted-foreground">{description}</p>
-        )}
-        <div className={cn(title && "mt-4")}>{children}</div>
-      </div>
-    </div>
+          <Dialog.Close
+            className="absolute right-4 top-4 rounded-md p-1 text-muted-foreground transition-colors hover:bg-accent hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            aria-label="Close"
+          >
+            <X className="h-4 w-4" />
+          </Dialog.Close>
+
+          {/* Radix requires a Title for a11y; render a hidden one when unused. */}
+          {title ? (
+            <Dialog.Title className="text-lg font-semibold tracking-tight">
+              {title}
+            </Dialog.Title>
+          ) : (
+            <Dialog.Title className="sr-only">Dialog</Dialog.Title>
+          )}
+          {description && (
+            <Dialog.Description className="mt-1 text-sm text-muted-foreground">
+              {description}
+            </Dialog.Description>
+          )}
+
+          <div className={cn(title && "mt-4")}>{children}</div>
+        </Dialog.Content>
+      </Dialog.Portal>
+    </Dialog.Root>
   );
 }

@@ -1,23 +1,16 @@
 "use client";
 
 import { use, useEffect, useRef, useState } from "react";
-import {
-  DndContext,
-  DragOverlay,
-  PointerSensor,
-  closestCorners,
-  useSensor,
-  useSensors,
-  type DragEndEvent,
-  type DragStartEvent,
-} from "@dnd-kit/core";
+import { monitorForElements } from "@atlaskit/pragmatic-drag-and-drop/element/adapter";
+import { extractClosestEdge } from "@atlaskit/pragmatic-drag-and-drop-hitbox/closest-edge";
+import { autoScrollForElements } from "@atlaskit/pragmatic-drag-and-drop-auto-scroll/element";
 import { Plus } from "lucide-react";
 
 import { BoardColumn } from "@/components/board/board-column";
-import { IssueCard } from "@/components/board/issue-card";
 import { IssueDetail } from "@/components/board/issue-detail";
 import { CreateIssueModal } from "@/components/board/create-issue";
 import { Button } from "@/components/ui/button";
+import { Skeleton } from "@/components/ui/skeleton";
 import { apiGet, apiPatch } from "@/lib/api";
 import { boardSocketUrl } from "@/lib/ws";
 import { useAuthStore } from "@/store/auth";
@@ -73,14 +66,13 @@ export default function BoardPage({
 
   const [columns, setColumns] = useState<Columns>(emptyColumns());
   const [loading, setLoading] = useState(true);
-  const [activeId, setActiveId] = useState<string | null>(null);
+  const [createOpen, setCreateOpen] = useState(false);
+  const [selected, setSelected] = useState<Issue | null>(null);
 
+  // Always-current snapshot for the drop handler (which is registered once).
   const boardRef = useRef<Columns>(columns);
   boardRef.current = columns;
-
-  const sensors = useSensors(
-    useSensor(PointerSensor, { activationConstraint: { distance: 6 } }),
-  );
+  const scrollRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     (async () => {
@@ -116,68 +108,80 @@ export default function BoardPage({
     return () => ws.close();
   }, [projectId, token]);
 
-  function onDragStart(event: DragStartEvent) {
-    setActiveId(String(event.active.id));
-    document.body.classList.add("dragging-cursor");
-  }
+  // Horizontal auto-scroll when dragging near the board edges.
+  useEffect(() => {
+    const el = scrollRef.current;
+    if (!el) return;
+    return autoScrollForElements({ element: el });
+  }, []);
 
-  function onDragCancel() {
-    setActiveId(null);
-    document.body.classList.remove("dragging-cursor");
-  }
+  // Single global monitor performs the actual move on drop.
+  useEffect(() => {
+    return monitorForElements({
+      canMonitor: ({ source }) => source.data.type === "card",
+      onDrop({ source, location }) {
+        document.body.classList.remove("dragging-cursor");
+        const targets = location.current.dropTargets;
+        if (!targets.length) return;
 
-  function onDragEnd(event: DragEndEvent) {
-    const { active, over } = event;
-    setActiveId(null);
-    document.body.classList.remove("dragging-cursor");
-    if (!over) return;
+        const cardId = source.data.cardId as string;
+        const prev = boardRef.current;
+        const from = findColumn(prev, cardId);
+        if (!from) return;
 
-    const activeId = String(active.id);
-    const overId = String(over.id);
-    if (activeId === overId) return;
+        // Work out destination column + index from the innermost drop target.
+        const top = targets[0]!;
+        let to: IssueStatus;
+        let insertIndex: number;
+        if (top.data.type === "card") {
+          to = top.data.status as IssueStatus;
+          const overId = top.data.cardId as string;
+          const overIndex = prev[to].findIndex((i) => i.id === overId);
+          const edge = extractClosestEdge(top.data);
+          insertIndex = overIndex + (edge === "bottom" ? 1 : 0);
+        } else {
+          to = top.data.status as IssueStatus;
+          insertIndex = prev[to].length;
+        }
 
-    const prev = boardRef.current;
-    const from = findColumn(prev, activeId);
-    if (!from) return;
-    const to: IssueStatus = STATUSES.includes(overId as IssueStatus)
-      ? (overId as IssueStatus)
-      : (findColumn(prev, overId) ?? from);
+        const fromItems = [...prev[from]];
+        const movingIndex = fromItems.findIndex((i) => i.id === cardId);
+        if (movingIndex === -1) return;
+        const moving = fromItems[movingIndex]!;
+        fromItems.splice(movingIndex, 1);
 
-    const fromItems = [...prev[from]];
-    const movingIndex = fromItems.findIndex((i) => i.id === activeId);
-    if (movingIndex === -1) return;
-    const moving = fromItems[movingIndex]!;
-    fromItems.splice(movingIndex, 1);
+        const toItems = from === to ? fromItems : [...prev[to]];
+        // Removing the card from earlier in the same list shifts the target.
+        let idx = insertIndex;
+        if (from === to && movingIndex < insertIndex) idx -= 1;
+        idx = Math.max(0, Math.min(idx, toItems.length));
 
-    const toItems = from === to ? fromItems : [...prev[to]];
-    let insertAt = toItems.length;
-    if (!STATUSES.includes(overId as IssueStatus)) {
-      const overIndex = toItems.findIndex((i) => i.id === overId);
-      if (overIndex !== -1) insertAt = overIndex;
-    }
-    const newRank = computeRank(toItems[insertAt - 1]?.rank, toItems[insertAt]?.rank);
-    const updated: Issue = { ...moving, status: to, rank: newRank };
-    toItems.splice(insertAt, 0, updated);
+        const newRank = computeRank(toItems[idx - 1]?.rank, toItems[idx]?.rank);
+        const updated: Issue = { ...moving, status: to, rank: newRank };
+        toItems.splice(idx, 0, updated);
 
-    setColumns(
-      from === to
-        ? { ...prev, [to]: toItems }
-        : { ...prev, [from]: fromItems, [to]: toItems },
-    );
+        setColumns(
+          from === to
+            ? { ...prev, [to]: toItems }
+            : { ...prev, [from]: fromItems, [to]: toItems },
+        );
 
-    apiPatch(`/issues/${activeId}`, { status: to, rank: newRank }).catch(() => {});
-  }
+        apiPatch(`/issues/${cardId}`, { status: to, rank: newRank }).catch(() => {});
+      },
+    });
+  }, []);
 
-  const activeIssue = activeId
-    ? STATUSES.flatMap((s) => columns[s]).find((i) => i.id === activeId)
-    : null;
-
-  const [createOpen, setCreateOpen] = useState(false);
-  const [selected, setSelected] = useState<Issue | null>(null);
+  const totalIssues = STATUSES.reduce((n, s) => n + columns[s].length, 0);
 
   return (
     <div className="flex h-full flex-col">
-      <div className="flex items-center justify-end px-6 py-3">
+      <div className="flex items-center justify-between border-b px-6 py-4">
+        <div>
+          <h1 className="text-lg font-bold tracking-tight">Board</h1>
+          <p className="text-xs text-muted-foreground">
+            {loading ? "Loading…" : `${totalIssues} issue${totalIssues === 1 ? "" : "s"}`}
+          </p>
+        </div>
         <Button onClick={() => setCreateOpen(true)}>
           <Plus className="h-4 w-4" />
           New issue
@@ -185,34 +189,30 @@ export default function BoardPage({
       </div>
 
       {loading ? (
-        <p className="px-6 text-sm text-muted-foreground">Loading board…</p>
+        <div className="flex flex-1 gap-5 overflow-hidden px-6 py-5">
+          {STATUSES.map((s) => (
+            <div key={s} className="flex w-72 shrink-0 flex-col gap-2">
+              <Skeleton className="h-8 w-full" />
+              <Skeleton className="h-20 w-full" />
+              <Skeleton className="h-20 w-full" />
+            </div>
+          ))}
+        </div>
       ) : (
-        <DndContext
-          sensors={sensors}
-          collisionDetection={closestCorners}
-          onDragStart={onDragStart}
-          onDragEnd={onDragEnd}
-          onDragCancel={onDragCancel}
+        <div
+          ref={scrollRef}
+          className="flex flex-1 gap-5 overflow-x-auto px-6 py-5"
         >
-          <div className="flex flex-1 gap-4 overflow-x-auto px-6 pb-6">
-            {STATUSES.map((status) => (
-              <BoardColumn
-                key={status}
-                status={status}
-                label={STATUS_LABELS[status]}
-                issues={columns[status]}
-                onCardClick={(issue) => setSelected(issue)}
-              />
-            ))}
-          </div>
-          <DragOverlay>
-            {activeIssue ? (
-              <div className="rotate-3 rounded-md shadow-2xl ring-2 ring-primary">
-                <IssueCard issue={activeIssue} />
-              </div>
-            ) : null}
-          </DragOverlay>
-        </DndContext>
+          {STATUSES.map((status) => (
+            <BoardColumn
+              key={status}
+              status={status}
+              label={STATUS_LABELS[status]}
+              issues={columns[status]}
+              onCardClick={(issue) => setSelected(issue)}
+            />
+          ))}
+        </div>
       )}
 
       <CreateIssueModal

@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
 import { TypeBadge, PriorityBadge } from "@/components/ui/badge";
+import { Skeleton } from "@/components/ui/skeleton";
 import { apiGet, apiPatch } from "@/lib/api";
 import type { Issue, IssueStatus, Sprint } from "@/lib/types";
 
@@ -71,15 +72,14 @@ export default function BacklogPage({
 
   return (
     <div className="mx-auto h-full max-w-4xl overflow-y-auto px-6 py-5">
-      <div className="mb-5 flex items-center gap-3">
-        <div className="relative flex-1">
-          <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-          <Input
-            value={q}
-            onChange={(e) => setQ(e.target.value)}
-            placeholder="Search backlog…"
-            className="pl-9"
-          />
+      <div className="mb-5 flex items-end justify-between">
+        <div>
+          <h1 className="text-lg font-bold tracking-tight">Backlog</h1>
+          <p className="text-xs text-muted-foreground">
+            {loading
+              ? "Loading…"
+              : `${backlog.length} issue${backlog.length === 1 ? "" : "s"} · not in a sprint`}
+          </p>
         </div>
         <Button onClick={() => setCreateOpen(true)}>
           <Plus className="h-4 w-4" />
@@ -87,16 +87,35 @@ export default function BacklogPage({
         </Button>
       </div>
 
+      <div className="relative mb-4">
+        <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+        <Input
+          value={q}
+          onChange={(e) => setQ(e.target.value)}
+          placeholder="Search backlog…"
+          className="pl-9"
+        />
+      </div>
+
       {loading ? (
-        <p className="text-sm text-muted-foreground">Loading backlog…</p>
+        <div className="space-y-2">
+          {Array.from({ length: 5 }).map((_, i) => (
+            <Skeleton key={i} className="h-12 w-full" />
+          ))}
+        </div>
       ) : backlog.length === 0 ? (
-        <p className="rounded-lg border border-dashed py-16 text-center text-sm text-muted-foreground">
-          {q ? "No matching issues." : "Backlog is empty — create an issue."}
-        </p>
+        <div className="flex flex-col items-center rounded-xl border border-dashed bg-card py-16 text-center">
+          <p className="text-sm text-muted-foreground">
+            {q ? "No matching issues." : "Backlog is empty — create your first issue."}
+          </p>
+        </div>
       ) : (
-        <ul className="divide-y rounded-lg border">
+        <ul className="divide-y overflow-hidden rounded-xl border bg-card">
           {backlog.map((issue) => (
-            <li key={issue.id} className="flex items-center gap-3 px-4 py-3">
+            <li
+              key={issue.id}
+              className="flex items-center gap-3 px-4 py-3 transition-colors hover:bg-muted/50"
+            >
               <TypeBadge type={issue.type} />
               <span className="font-mono text-xs text-muted-foreground">
                 {issue.key}

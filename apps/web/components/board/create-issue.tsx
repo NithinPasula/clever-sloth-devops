@@ -7,6 +7,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select } from "@/components/ui/select";
 import { Modal } from "@/components/ui/modal";
+import { toast } from "@/components/ui/toaster";
 import { apiPost } from "@/lib/api";
 import type { Issue, IssuePriority, IssueType } from "@/lib/types";
 
@@ -41,6 +42,9 @@ export function CreateIssueModal({
       setType("task");
       setPriority("medium");
       onClose();
+      toast.success(`${issue.key} created`);
+    } catch {
+      toast.error("Could not create issue");
     } finally {
       setSaving(false);
     }

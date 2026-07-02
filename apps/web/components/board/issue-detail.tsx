@@ -16,7 +16,8 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
-import { TypeBadge } from "@/components/ui/badge";
+import { TypeBadge, PriorityBadge } from "@/components/ui/badge";
+import { toast } from "@/components/ui/toaster";
 import { apiGet, apiPost, apiPatch, apiDelete } from "@/lib/api";
 import { relativeTime } from "@/lib/time";
 import type {
@@ -97,6 +98,9 @@ export function IssueDetail({
       // 2. upload the bytes straight to MinIO (not through our API)
       await fetch(res.uploadUrl, { method: "PUT", body: file });
       setAttachments((prev) => [...prev, res.attachment]);
+      toast.success("File attached");
+    } catch {
+      toast.error("Upload failed");
     } finally {
       setUploading(false);
     }
@@ -142,16 +146,20 @@ export function IssueDetail({
   }
 
   async function remove() {
+    if (!confirm(`Delete ${issue.key}? This can't be undone.`)) return;
     await apiDelete(`/issues/${issue.id}`).catch(() => {});
+    toast.success(`${issue.key} deleted`);
     onDelete(issue.id);
   }
 
   return (
     <Modal open onClose={onClose} className="max-w-2xl">
       <div className="max-h-[80vh] space-y-5 overflow-y-auto pr-1">
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-3">
           <TypeBadge type={issue.type} />
           <span className="font-mono text-sm text-muted-foreground">{issue.key}</span>
+          <span className="text-muted-foreground/40">·</span>
+          <PriorityBadge priority={issue.priority} />
         </div>
 
         <input
