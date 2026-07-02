@@ -49,7 +49,12 @@ metadata:
     app: api
     {{- include "clever-sloth.labels" . | nindent 4 }}
 spec:
+  # When autoscaling is on, the HPA owns the replica count — declaring it here too
+  # would let every reconcile (ArgoCD/Helm) reset it and fight the HPA. So we omit
+  # replicas in that case and let the HPA be the single source of truth.
+  {{- if not .Values.autoscaling.enabled }}
   replicas: {{ .Values.api.replicas }}
+  {{- end }}
   selector:
     matchLabels:
       app: api

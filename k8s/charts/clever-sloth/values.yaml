@@ -142,3 +142,16 @@ networkPolicy:
   enabled: true
   ingressNamespace: ingress-nginx
   monitoringNamespace: monitoring
+
+# ----------------------------------------------------------------------------
+# Autoscaling — HorizontalPodAutoscaler for the API (templates/hpa.yaml).
+# Scales api replicas on CPU utilization (% of the api CPU request, so requests
+# must be set). Needs metrics-server. When enabled, the api Deployment stops
+# declaring a static replica count so the HPA owns it. maxReplicas kept low for
+# this RAM-tight single node.
+# ----------------------------------------------------------------------------
+autoscaling:
+  enabled: true
+  minReplicas: 1
+  maxReplicas: 4
+  targetCPUUtilizationPercentage: 70
