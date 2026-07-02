@@ -1,0 +1,11 @@
+# A sample tenant. Applying this makes the operator provision a namespace
+# (cs-project-acme) with member RBAC and a default-deny NetworkPolicy.
+apiVersion: platform.cleversloth.io/v1alpha1
+kind: CleverSlothProject
+metadata:
+  name: acme
+spec:
+  displayName: "Acme Team"
+  members:
+    - alice
+    - bob

@@ -1,0 +1,83 @@
+---
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  annotations:
+    controller-gen.kubebuilder.io/version: v0.16.5
+  name: cleverslothprojects.platform.cleversloth.io
+spec:
+  group: platform.cleversloth.io
+  names:
+    kind: CleverSlothProject
+    listKind: CleverSlothProjectList
+    plural: cleverslothprojects
+    shortNames:
+    - csp
+    singular: cleverslothproject
+  scope: Cluster
+  versions:
+  - additionalPrinterColumns:
+    - jsonPath: .status.namespace
+      name: Namespace
+      type: string
+    - jsonPath: .status.phase
+      name: Phase
+      type: string
+    - jsonPath: .metadata.creationTimestamp
+      name: Age
+      type: date
+    name: v1alpha1
+    schema:
+      openAPIV3Schema:
+        description: |-
+          CleverSlothProject provisions an isolated tenant: a dedicated namespace with
+          member RBAC and a default-deny NetworkPolicy. It is cluster-scoped.
+        properties:
+          apiVersion:
+            description: |-
+              APIVersion defines the versioned schema of this representation of an object.
+              Servers should convert recognized schemas to the latest internal value, and
+              may reject unrecognized values.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#resources
+            type: string
+          kind:
+            description: |-
+              Kind is a string value representing the REST resource this object represents.
+              Servers may infer this from the endpoint the client submits requests to.
+              Cannot be updated.
+              In CamelCase.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds
+            type: string
+          metadata:
+            type: object
+          spec:
+            description: CleverSlothProjectSpec is the desired state of a project
+              tenant.
+            properties:
+              displayName:
+                description: DisplayName is a human-friendly label for the project.
+                type: string
+              members:
+                description: |-
+                  Members are usernames granted edit access to the project's namespace
+                  (bound as RBAC User subjects).
+                items:
+                  type: string
+                type: array
+            type: object
+          status:
+            description: CleverSlothProjectStatus is the observed state, written back
+              by the controller.
+            properties:
+              namespace:
+                description: Namespace is the namespace provisioned for this project.
+                type: string
+              phase:
+                description: 'Phase is a high-level summary: "Pending" or "Ready".'
+                type: string
+            type: object
+        type: object
+    served: true
+    storage: true
+    subresources:
+      status: {}
