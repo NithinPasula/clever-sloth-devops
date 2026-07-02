@@ -36,14 +36,10 @@ spec:
     namespace: clever-sloth-dev
 
   syncPolicy:
-    # MANUAL sync on purpose: after committing, you'll see the app go OutOfSync,
-    # then click Sync and watch ArgoCD reconcile it to Synced/Healthy. Once you've
-    # seen that, uncomment `automated` below to turn on full GitOps (auto-sync +
-    # self-heal + prune), then re-apply this file.
-    #
-    # automated:
-    #   prune: true        # delete resources removed from git
-    #   selfHeal: true     # revert manual kubectl changes back to git
+    # Full GitOps: ArgoCD continuously reconciles the cluster to match git.
+    automated:
+      prune: true        # delete resources removed from git
+      selfHeal: true     # revert manual kubectl changes back to git
     syncOptions:
       - CreateNamespace=false   # clever-sloth-dev already exists
       - ApplyOutOfSyncOnly=true # only touch resources that actually differ
