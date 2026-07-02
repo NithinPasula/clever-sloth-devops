@@ -2,6 +2,11 @@
 
 **A self-hosted, Jira-style project management platform — built to run the way production systems do.**
 
+[![API image](https://img.shields.io/docker/v/nithinpasula195/clever-sloth-api?label=api%20image&logo=docker&sort=semver)](https://hub.docker.com/r/nithinpasula195/clever-sloth-api)
+[![Web image](https://img.shields.io/docker/v/nithinpasula195/clever-sloth-web?label=web%20image&logo=docker&sort=semver)](https://hub.docker.com/r/nithinpasula195/clever-sloth-web)
+
+Prebuilt images: [`nithinpasula195/clever-sloth-api`](https://hub.docker.com/r/nithinpasula195/clever-sloth-api) · [`nithinpasula195/clever-sloth-web`](https://hub.docker.com/r/nithinpasula195/clever-sloth-web) — see [docs/GETTING_STARTED.md](docs/GETTING_STARTED.md).
+
 > **Created and built by [Nithin Pasula](https://github.com/NithinPasula).**
 > Designed, owned, and maintained by Nithin Pasula as a hands-on platform for mastering production-grade Kubernetes and DevOps.
 

@@ -152,8 +152,8 @@ docker build -f apps/web/Dockerfile \
   -t clever-sloth-web:dev .
 k3d image import clever-sloth-api:dev clever-sloth-web:dev -c clever-sloth
 ```
-> (Once the images are published to Docker Hub, you'll be able to skip the build and
-> reference `nithinpasula/clever-sloth-{api,web}` directly — see the note at the end.)
+> **Prefer not to build?** The images are on Docker Hub — skip this step and point the chart
+> at `nithinpasula195/clever-sloth-{api,web}` instead (see **Prebuilt images** at the end).
 
 ### Step 6 — Provide the secrets
 
@@ -291,8 +291,22 @@ docker compose down -v                 # (Path A) stop local infra + volumes
 
 ---
 
-## Note: prebuilt images
+## Prebuilt images (skip the build)
 
-Once the images are published to Docker Hub as `nithinpasula/clever-sloth-api` and
-`nithinpasula/clever-sloth-web`, you can skip the local build/import in Step 5 and set the
-image values in `values.local.yaml` to the Docker Hub tags instead. (Coming soon.)
+The images are published publicly on Docker Hub, so you can skip **Step 5** entirely:
+
+- **API** → [`nithinpasula195/clever-sloth-api`](https://hub.docker.com/r/nithinpasula195/clever-sloth-api)
+- **Web** → [`nithinpasula195/clever-sloth-web`](https://hub.docker.com/r/nithinpasula195/clever-sloth-web)
+
+Point the chart at them by adding to your `values.local.yaml`:
+```yaml
+api:
+  image: nithinpasula195/clever-sloth-api:0.1.0
+web:
+  image: nithinpasula195/clever-sloth-web:0.1.0
+```
+The cluster will pull them straight from Docker Hub (no `k3d image import` needed).
+
+> **Caveat:** the published **web** image bakes `NEXT_PUBLIC_API_URL=https://clever-sloth.local/api/v1`
+> at build time, so it only works for the local `clever-sloth.local` hostname described in this guide.
+> For a different/public hostname, rebuild the web image with your URL (Step 5). Images are **amd64**.
