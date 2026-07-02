@@ -1,0 +1,70 @@
+# Argo CD — values slimmed for a small local cluster (Phase 6, GitOps).
+#
+# Argo CD watches a Git repo and continuously makes the cluster match it. The
+# default chart install is ~7 pods; this trims it to the 4 that matter and puts
+# resource limits on each so it can't run away with RAM on this box.
+#
+#   helm install argocd argo/argo-cd -n argocd --create-namespace --version 10.1.0 \
+#     -f k8s/argocd/values.yaml
+#
+# Reference: https://github.com/argoproj/argo-helm/tree/main/charts/argo-cd
+
+# ---------------------------------------------------------------------------
+# Turn OFF optional components we don't need yet (each is a pod we can skip):
+#   - dex: single-sign-on / OIDC. We log in with the built-in admin user, so off.
+#   - notifications: Slack/email on sync events. Not needed for learning.
+#   - applicationSet: templating many Applications from one spec. Not needed yet.
+# ---------------------------------------------------------------------------
+dex:
+  enabled: false
+notifications:
+  enabled: false
+applicationSet:
+  enabled: false
+
+# ---------------------------------------------------------------------------
+# Make the UI easy to reach locally: run the API/UI server in "insecure" mode so
+# it serves plain HTTP. That means `kubectl port-forward` + http://localhost works
+# with no self-signed-cert warnings. (Fine for a local-only cluster; you would NOT
+# do this on a real internet-facing Argo CD.)
+# ---------------------------------------------------------------------------
+configs:
+  params:
+    server.insecure: true
+
+# ---------------------------------------------------------------------------
+# The 4 components we keep, each resource-capped. The application-controller (the
+# actual reconciler that compares git vs cluster) is the memory-heaviest, so it
+# gets the most headroom.
+# ---------------------------------------------------------------------------
+controller:                    # application-controller — the git-vs-cluster reconciler
+  resources:
+    requests:
+      cpu: 50m
+      memory: 128Mi
+    limits:
+      memory: 512Mi
+
+server:                        # the API + web UI
+  resources:
+    requests:
+      cpu: 25m
+      memory: 64Mi
+    limits:
+      memory: 256Mi
+
+repoServer:                    # clones the git repo and renders manifests
+  resources:
+    requests:
+      cpu: 25m
+      memory: 64Mi
+    limits:
+      memory: 256Mi
+
+redis:                         # small cache Argo CD uses internally
+  resources:
+    requests:
+      cpu: 10m
+      memory: 32Mi
+    limits:
+      memory: 128Mi

@@ -1,0 +1,49 @@
+# ArgoCD Application — the GitOps "desired state" pointer for the dev app.
+#
+# What this does: tells ArgoCD to keep the clever-sloth-dev namespace in sync
+# with the Helm chart at k8s/charts/clever-sloth on the main branch of the repo.
+# ArgoCD pulls the chart from GitHub, runs `helm template` with the committed
+# values.yaml, and compares the result to what's live in the cluster.
+#
+# Secrets: values.yaml keeps `secrets.create: false`, so this chart renders NO
+# Secret objects. The real Secrets (postgres-secret / minio-secret / api-secret)
+# already exist in the cluster, created by the SealedSecrets controller from the
+# committed k8s/dev/secrets/*-sealed.yaml. ArgoCD only *references* them.
+#
+# Apply this once:  kubectl apply -f k8s/argocd/apps/clever-sloth-dev.yaml
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: clever-sloth-dev
+  namespace: argocd
+spec:
+  project: default
+
+  source:
+    repoURL: https://github.com/NithinPasula/clever-sloth-devops.git
+    targetRevision: main
+    path: k8s/charts/clever-sloth
+    helm:
+      # Match the existing hand-installed Helm release name so ArgoCD adopts the
+      # running resources cleanly instead of creating a second copy.
+      releaseName: clever-sloth
+      # values.yaml at the chart root is picked up automatically. We deliberately
+      # do NOT reference values.local.yaml (gitignored) — it isn't needed because
+      # secrets come from the SealedSecrets, not the chart.
+
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: clever-sloth-dev
+
+  syncPolicy:
+    # MANUAL sync on purpose: after committing, you'll see the app go OutOfSync,
+    # then click Sync and watch ArgoCD reconcile it to Synced/Healthy. Once you've
+    # seen that, uncomment `automated` below to turn on full GitOps (auto-sync +
+    # self-heal + prune), then re-apply this file.
+    #
+    # automated:
+    #   prune: true        # delete resources removed from git
+    #   selfHeal: true     # revert manual kubectl changes back to git
+    syncOptions:
+      - CreateNamespace=false   # clever-sloth-dev already exists
+      - ApplyOutOfSyncOnly=true # only touch resources that actually differ
